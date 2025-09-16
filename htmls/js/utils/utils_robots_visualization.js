@@ -1,4 +1,4 @@
-import { RobotFromPreprocessor } from "./utils_robot.js";
+import { RobotFromPreprocessor } from "./utils_robot_new.js";
 import { RobotFKSlidersVisualizer } from "./utils_kinematics.js";
 import { refresh_displays } from "./utils_three.js";
 

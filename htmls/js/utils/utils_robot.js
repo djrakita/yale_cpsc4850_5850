@@ -13,11 +13,6 @@ import {
     set_object_pose_from_wxyz_quaternion_and_position
 } from "./utils_transforms.js";
 
-/**
- * Generates a rotation matrix from roll, pitch, and yaw (RPY) angles.
- * @param {number[]} rpy - Array of three numbers representing roll, pitch, and yaw angles.
- * @returns {number[][]} A 3x3 SO(3) rotation matrix.
- */
 function get_rpy_SO3_matrix(rpy) {
     let rx = get_x_rotation_so3_matrix(rpy[0]);
     let ry = get_y_rotation_so3_matrix(rpy[1]);
@@ -26,11 +21,6 @@ function get_rpy_SO3_matrix(rpy) {
     return mul_matrix_matrix(mul_matrix_matrix(rx, ry), rz);
 }
 
-/**
- * Generates a quaternion from roll, pitch, and yaw (RPY) angles.
- * @param {number[]} rpy - Array of three numbers representing roll, pitch, and yaw angles.
- * @returns {number[]} A quaternion [w, x, y, z].
- */
 function get_rpy_wxyz_quaternion(rpy) {
     let rx = [ Math.cos(rpy[0]/2), Math.sin(rpy[0]/2), 0, 0 ];
     let ry = [ Math.cos(rpy[1]/2), 0, Math.sin(rpy[1]/2), 0 ];
@@ -39,12 +29,6 @@ function get_rpy_wxyz_quaternion(rpy) {
     return mul_wxyz_quaternions(mul_wxyz_quaternions(rx, ry), rz);
 }
 
-/**
- * Generates an SE(3) transformation matrix from a position vector and RPY angles.
- * @param {number[]} xyz - Array of three numbers representing the x, y, z coordinates.
- * @param {number[]} rpy - Array of three numbers representing roll, pitch, and yaw angles.
- * @returns {number[][]} A 4x4 SE(3) transformation matrix.
- */
 function get_xyz_rpy_SE3_matrix(xyz, rpy) {
     let s = get_rpy_SO3_matrix(rpy);
 
@@ -55,21 +39,7 @@ function get_xyz_rpy_SE3_matrix(xyz, rpy) {
         [0,0,0,1] ];
 }
 
-/**
- * Base class for robot joints. This class cannot be instantiated directly.
- * @class
- */
 export class RobotJointBaseClass {
-    /**
-     * Creates an instance of a robot joint.
-     * @param {string} joint_name - The name of the joint.
-     * @param {number} joint_idx - The index of the joint.
-     * @param {number} parent_link_idx - The index of the parent link.
-     * @param {number} child_link_idx - The index of the child link.
-     * @param {number[]} [xyz=[0,0,0]] - The position of the joint in the parent link's frame.
-     * @param {number[]} [rpy=[0,0,0]] - The orientation of the joint in the parent link's frame, given as roll, pitch, and yaw angles.
-     * @throws Will throw an error if instantiated directly.
-     */
     constructor(joint_name, joint_idx, parent_link_idx, child_link_idx, xyz=[0,0,0], rpy=[0,0,0]) {
         if (new.target === RobotJointBaseClass) {
             throw new Error("RobotJointBaseClass is a template class and cannot be instantiated directly.");
@@ -89,44 +59,16 @@ export class RobotJointBaseClass {
         this.joint_num_dofs = this.get_joint_num_dofs();
     }
 
-    /**
-     * Gets the type of the joint as a string.
-     * @returns {string} The joint type.
-     * @abstract
-     */
     get_joint_type_string() {
         throw new Error("Method 'get_joint_type_string()' must be implemented in the derived class.");
     }
 
-    /**
-     * Gets the number of degrees of freedom (DOFs) of the joint.
-     * @returns {number} The number of DOFs.
-     * @abstract
-     */
     get_joint_num_dofs() {
         throw new Error("Method 'get_joint_num_dofs()' must be implemented in the derived class.");
     }
 }
 
-/**
- * Represents a revolute joint in a robot.
- * Inherits from RobotJointBaseClass.
- * @class
- */
 export class RobotJointRevolute extends RobotJointBaseClass {
-    /**
-     * Creates an instance of a revolute joint.
-     * @param {string} joint_name - The name of the joint.
-     * @param {number} joint_idx - The index of the joint.
-     * @param {number} parent_link_idx - The index of the parent link.
-     * @param {number} child_link_idx - The index of the child link.
-     * @param {number} dof_idx - The index of the degree of freedom (DOF) associated with this joint.
-     * @param {number[]} axis - The axis of rotation for the joint.
-     * @param {number} lower_bound - The lower limit of the joint angle.
-     * @param {number} upper_bound - The upper limit of the joint angle.
-     * @param {number[]} [xyz=[0,0,0]] - The position of the joint in the parent link's frame.
-     * @param {number[]} [rpy=[0,0,0]] - The orientation of the joint in the parent link's frame, given as roll, pitch, and yaw angles.
-     */
     constructor(joint_name, joint_idx, parent_link_idx, child_link_idx, dof_idx, axis, lower_bound, upper_bound, xyz=[0,0,0], rpy=[0,0,0]) {
         super(joint_name, joint_idx, parent_link_idx, child_link_idx, xyz, rpy);
 
@@ -136,36 +78,16 @@ export class RobotJointRevolute extends RobotJointBaseClass {
         this.upper_bound = upper_bound;
     }
 
-    /** @inheritdoc */
     get_joint_type_string() {
         return 'revolute';
     }
 
-    /** @inheritdoc */
     get_joint_num_dofs() {
         return 1;
     }
 }
 
-/**
- * Represents a prismatic joint in a robot.
- * Inherits from RobotJointBaseClass.
- * @class
- */
 export class RobotJointPrismatic extends RobotJointBaseClass {
-    /**
-     * Creates an instance of a prismatic joint.
-     * @param {string} joint_name - The name of the joint.
-     * @param {number} joint_idx - The index of the joint.
-     * @param {number} parent_link_idx - The index of the parent link.
-     * @param {number} child_link_idx - The index of the child link.
-     * @param {number} dof_idx - The index of the degree of freedom (DOF) associated with this joint.
-     * @param {number[]} axis - The axis of translation for the joint.
-     * @param {number} lower_bound - The lower limit of the joint translation.
-     * @param {number} upper_bound - The upper limit of the joint translation.
-     * @param {number[]} [xyz=[0,0,0]] - The position of the joint in the parent link's frame.
-     * @param {number[]} [rpy=[0,0,0]] - The orientation of the joint in the parent link's frame, given as roll, pitch, and yaw angles.
-     */
     constructor(joint_name, joint_idx, parent_link_idx, child_link_idx, dof_idx, axis, lower_bound, upper_bound, xyz=[0,0,0], rpy=[0,0,0]) {
         super(joint_name, joint_idx, parent_link_idx, child_link_idx, xyz, rpy);
 
@@ -175,64 +97,30 @@ export class RobotJointPrismatic extends RobotJointBaseClass {
         this.upper_bound = upper_bound;
     }
 
-    /** @inheritdoc */
     get_joint_type_string() {
         return 'prismatic';
     }
 
-    /** @inheritdoc */
     get_joint_num_dofs() {
         return 1;
     }
 }
 
-/**
- * Represents a fixed joint in a robot.
- * Inherits from RobotJointBaseClass.
- * @class
- */
 export class RobotJointFixed extends RobotJointBaseClass {
-    /**
-     * Creates an instance of a fixed joint.
-     * @param {string} joint_name - The name of the joint.
-     * @param {number} joint_idx - The index of the joint.
-     * @param {number} parent_link_idx - The index of the parent link.
-     * @param {number} child_link_idx - The index of the child link.
-     * @param {number[]} [xyz=[0,0,0]] - The position of the joint in the parent link's frame.
-     * @param {number[]} [rpy=[0,0,0]] - The orientation of the joint in the parent link's frame, given as roll, pitch, and yaw angles.
-     */
     constructor(joint_name, joint_idx, parent_link_idx, child_link_idx, xyz=[0,0,0], rpy=[0,0,0]) {
         super(joint_name, joint_idx, parent_link_idx, child_link_idx, xyz, rpy);
     }
 
-    /** @inheritdoc */
     get_joint_type_string() {
         return 'fixed';
     }
 
-    /** @inheritdoc */
     get_joint_num_dofs() {
         return 0;
     }
 }
 
-/**
- * Represents a floating joint in a robot.
- * Inherits from RobotJointBaseClass.
- * @class
- */
 export class RobotJointFloating extends RobotJointBaseClass {
-    /**
-     * Creates an instance of a floating joint.
-     * @param {string} joint_name - The name of the joint.
-     * @param {number} joint_idx - The index of the joint.
-     * @param {number} parent_link_idx - The index of the parent link.
-     * @param {number} child_link_idx - The index of the child link.
-     * @param {number[]} rotation_dof_idxs - The indices of the rotation degrees of freedom (DOFs).
-     * @param {number[]} translation_dof_idxs - The indices of the translation degrees of freedom (DOFs).
-     * @param {number[]} [xyz=[0,0,0]] - The position of the joint in the parent link's frame.
-     * @param {number[]} [rpy=[0,0,0]] - The orientation of the joint in the parent link's frame, given as roll, pitch, and yaw angles.
-     */
     constructor(joint_name, joint_idx, parent_link_idx, child_link_idx, rotation_dof_idxs, translation_dof_idxs, xyz=[0,0,0], rpy=[0,0,0]) {
         super(joint_name, joint_idx, parent_link_idx, child_link_idx, xyz, rpy);
 
@@ -240,34 +128,17 @@ export class RobotJointFloating extends RobotJointBaseClass {
         this.translation_dof_idxs = translation_dof_idxs;
     }
 
-    /** @inheritdoc */
     get_joint_type_string() {
         return 'floating';
     }
 
-    /** @inheritdoc */
     get_joint_num_dofs() {
         return 6;
     }
 }
 
-/**
- * Represents a link in a robot.
- * @class
- */
 export class RobotLink {
-    /**
-     * Creates an instance of a robot link.
-     * @param {string} link_name - The name of the link.
-     * @param {number} link_idx - The index of the link.
-     * @param {number} parent_joint_idx - The index of the parent joint.
-     * @param {number[]} children_joint_idxs - The indices of the child joints.
-     * @param {number} parent_link_idx - The index of the parent link.
-     * @param {number[]} children_link_idxs - The indices of the child links.
-     * @param {string} [mesh_name=''] - The name of the mesh file associated with the link.
-     * @param {string} [convex_hull_mesh_name=''] - The name of the convex hull mesh file associated with the link.
-     */
-    constructor(link_name, link_idx, parent_joint_idx, children_joint_idxs, parent_link_idx, children_link_idxs, mesh_name='', convex_hull_mesh_name = '') {
+    constructor(link_name, link_idx, parent_joint_idx, children_joint_idxs, parent_link_idx, children_link_idxs, mesh_name='') {
         this.link_name = link_name;
         this.link_idx = link_idx;
         this.parent_joint_idx = parent_joint_idx;
@@ -275,20 +146,10 @@ export class RobotLink {
         this.parent_link_idx = parent_link_idx;
         this.children_link_idxs = children_link_idxs;
         this.mesh_name = mesh_name;
-        this.convex_hull_mesh_name = convex_hull_mesh_name;
-        this.mesh_config = null;
     }
 }
 
-/**
- * Base class for a robot. This class cannot be instantiated directly.
- * @class
- */
 export class RobotBaseClass {
-    /**
-     * Creates an instance of a robot.
-     * @throws Will throw an error if instantiated directly.
-     */
     constructor() {
         if (new.target === RobotBaseClass) {
             throw new Error("RobotBaseClass is a template class and cannot be instantiated directly.");
@@ -301,7 +162,6 @@ export class RobotBaseClass {
         this.kinematic_hierarchy = this.get_robot_kinematic_hierarchy();
         this.already_spawned = false;
         this.link_to_mesh_idxs_mapping = [];
-        this.link_to_convex_hull_mesh_idxs_mapping = [];
 
         this.link_to_kinematic_hierarchy_order_idx = [];
         this.links.forEach( () => { this.link_to_kinematic_hierarchy_order_idx.push(0); } );
@@ -314,10 +174,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Spawns the robot in the given engine.
-     * @param {object} engine - The engine where the robot will be spawned.
-     */
     async spawn_robot(engine) {
         if(this.already_spawned) { return; }
 
@@ -329,172 +185,19 @@ export class RobotBaseClass {
             this.link_to_mesh_idxs_mapping.push([]);
         }
 
-        for(let i=0; i < this.links.length; i++) {
-            this.link_to_convex_hull_mesh_idxs_mapping.push([]);
-        }
-
         for (const link of this.links) {
-            // First load the link mesh
             let link_mesh_name = link.mesh_name;
-            let link_idx;
-            let fp;
             if (link_mesh_name !== '') {
-                link_idx = link.link_idx;
-                fp = '../../' + this.robot_links_mesh_directory_name + '/' + link.mesh_name;
-                let idxs = [];
-                if (typeof link_mesh_name === 'object') {
-                    if (link_mesh_name.length === 0) {
-                    } else {
-                        // We assume the link has multiple mesh files as stls <-- For now this is only the case when loading convex decomposition
-                        const fps = this.convex_decomposition_mesh_config.stl_link_mesh_relative_paths[link.link_idx];
-                        for (const file of fps) {
-                            let idx = await engine.add_stl_mesh_object('../../' + this.robot_links_mesh_directory_name + '/' + file, 0xb5b5b5);
-                            idxs.push(idx);
-                        }
-                    }
-                } else if (fp.endsWith('.dae')) {
-                    idxs = await engine.add_collada_mesh_object(fp);
-                } else if (fp.endsWith('.glb' || '.gltf')) {
-                    idxs = await engine.add_gltf_mesh_object(fp);
-                } else if (fp.endsWith('.stl')) {
-                    let idx = await engine.add_stl_mesh_object(fp, 0xb5b5b5);
-                    idxs = [idx];
-                } else { // We assume the link has multiple mesh files as stls
-                    console.error('Wrong file type');
-                }
+                let link_idx = link.link_idx;
+                let fp = '../../' + this.robot_links_mesh_directory_name + '/' + link.mesh_name;
+                let idxs = await engine.add_gltf_mesh_object(fp);
                 idxs.forEach(idx => {
                     this.link_to_mesh_idxs_mapping[link_idx].push(idx);
                 })
-
-                // Next load the convex hull mesh
-                let convex_hull_mesh_name = link.convex_hull_mesh_name;
-                let hull_idxs;
-                if (convex_hull_mesh_name !== '' && convex_hull_mesh_name !== null) {
-                    let hull_fp = '../../' + this.robot_links_mesh_directory_name + '/' + link.convex_hull_mesh_name;
-                    if (hull_fp.endsWith('.stl')) {
-                        let hull_idx = await engine.add_stl_mesh_object(hull_fp, 0x00ffff, 0.5, true);
-                        hull_idxs = [hull_idx];
-                    } else {
-                        console.error('Invalid hull mesh file type: ', hull_fp, ' should have ended with stl');
-                    }
-                    hull_idxs.forEach(idx => {
-                        this.link_to_convex_hull_mesh_idxs_mapping[link_idx].push(idx);
-                    })
-                }
             }
         }
     }
 
-    /**
-     * Despawns the robot from the given engine.
-     * @param {object} engine - The engine from which the robot will be despawned.
-     */
-    async despawn_robot(engine) {
-        if (!this.already_spawned) {
-            console.log('Robot is not spawned.');
-            return;
-        }
-
-        // Remove robot-specific meshes from the scene and nullify the mesh object references
-        this.link_to_mesh_idxs_mapping.forEach(mesh_indices => {
-            mesh_indices.forEach(idx => {
-                const mesh = engine.mesh_objects[idx];
-                if (mesh) {
-                    engine.scene.remove(mesh);
-                    engine.mesh_objects[idx] = null; // Nullify the mesh object reference
-                }
-            });
-        });
-
-        // Remove robot-specific convex hull meshes from the scene and nullify the mesh object references
-        this.link_to_convex_hull_mesh_idxs_mapping.forEach(mesh_indices => {
-            mesh_indices.forEach(idx => {
-                const mesh = engine.mesh_objects[idx];
-                if (mesh) {
-                    engine.scene.remove(mesh);
-                    engine.mesh_objects[idx] = null; // Nullify the mesh object reference
-                }
-            });
-        });
-
-        // Reset the properties
-        this.already_spawned = false;
-        this.link_to_mesh_idxs_mapping = [];
-        this.link_to_convex_hull_mesh_idxs_mapping = [];
-        console.log('Robot despawned successfully.');
-    }
-
-    // async spawn_robot(engine) {
-    //     if(this.already_spawned) { return; }
-    //
-    //     this.already_spawned = true;
-    //
-    //     this.link_to_mesh_idxs_mapping = [];
-    //
-    //     for(let i=0; i < this.links.length; i++) {
-    //         this.link_to_mesh_idxs_mapping.push([]);
-    //     }
-    //
-    //     for (const link of this.links) {
-    //         let link_mesh_name = link.mesh_name;
-    //         if (link_mesh_name !== '') {
-    //             let link_idx = link.link_idx;
-    //             let fp = '../../' + this.robot_links_mesh_directory_name + '/' + link.mesh_name;
-    //             let idxs = await engine.add_gltf_mesh_object(fp);
-    //             idxs.forEach(idx => {
-    //                 this.link_to_mesh_idxs_mapping[link_idx].push(idx);
-    //             })
-    //         }
-    //     }
-    // }
-
-    // async spawn_robot_stl(engine) {
-    //     if (this.already_spawned) {
-    //         return;
-    //     }
-    //
-    //     this.already_spawned = true;
-    //     this.link_to_mesh_idxs_mapping = [];
-    //
-    //     // Initialize mapping for each link
-    //     for (let i = 0; i < this.links.length; i++) {
-    //         this.link_to_mesh_idxs_mapping.push([]);
-    //     }
-    //
-    //     // Iterate over each link and load its mesh if it exists
-    //     for (const link of this.links) {
-    //         let link_mesh_name = link.mesh_name;
-    //         if (link_mesh_name !== '') {
-    //             let link_idx = link.link_idx;
-    //             let fp = '../../' + this.robot_links_mesh_directory_name + '/' + link_mesh_name;
-    //             let idx = await engine.add_stl_mesh_object(fp);
-    //             let idxs = [idx];
-    //             idxs.forEach(id => {
-    //                 this.link_to_mesh_idxs_mapping[link_idx].push(id);
-    //             });
-    //         }
-    //     }
-    // }
-
-    /**
-     * Sets the pose of the hull mesh for a specific link using an SE3 matrix.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {number[][]} SE3_matrix - The 4x4 SE3 matrix representing the pose.
-     */
-    set_hull_mesh_pose_from_SE3_matrix(engine, link_idx, SE3_matrix) {
-        let idxs = this.link_to_convex_hull_mesh_idxs_mapping[link_idx];
-        idxs.forEach(idx => {
-            set_object_pose_from_SE3_matrix(engine, idx, SE3_matrix);
-        });
-    }
-
-    /**
-     * Sets the pose of the link mesh for a specific link using an SE3 matrix.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {number[][]} SE3_matrix - The 4x4 SE3 matrix representing the pose.
-     */
     set_link_mesh_pose_from_SE3_matrix(engine, link_idx, SE3_matrix) {
         let idxs = this.link_to_mesh_idxs_mapping[link_idx];
         idxs.forEach(idx => {
@@ -502,12 +205,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the pose of the link mesh for a specific link using an SE3 matrix.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {number[][]} SE3_matrix - The 4x4 SE3 matrix representing the pose.
-     */
     set_link_mesh_pose_from_SO3_matrix_and_position(engine, link_idx, SO3_matrix, position) {
         let idxs = this.link_to_mesh_idxs_mapping[link_idx];
         idxs.forEach(idx => {
@@ -515,13 +212,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the pose of the link mesh for a specific link using a quaternion and position.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {number[]} wxyz_quaternion - The quaternion [w, x, y, z].
-     * @param {number[]} position - The position vector [x, y, z].
-     */
     set_link_mesh_pose_from_wxyz_quaternion_and_position(engine, link_idx, wxyz_quaternion, position) {
         let idxs = this.link_to_mesh_idxs_mapping[link_idx];
         idxs.forEach(idx => {
@@ -529,13 +219,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the pose of the link mesh for a specific link using a scalar vector quaternion and position.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {number[]} scalar_vector_quaternion - The quaternion in scalar vector form [s, v0, v1, v2].
-     * @param {number[]} position - The position vector [x, y, z].
-     */
     set_link_mesh_pose_from_scalar_vector_quaternion_and_position(engine, link_idx, scalar_vector_quaternion, position) {
         let idxs = this.link_to_mesh_idxs_mapping[link_idx];
         idxs.forEach(idx => {
@@ -543,11 +226,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the visibility of the wireframe for all links.
-     * @param {object} engine - The engine containing the robot.
-     * @param {boolean} visible - Whether the wireframe should be visible or not.
-     */
     set_wireframe_visibility(engine, visible) {
         this.link_to_mesh_idxs_mapping.forEach(link_idxs => {
             link_idxs.forEach(idx => {
@@ -556,11 +234,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the visibility of all link meshes.
-     * @param {object} engine - The engine containing the robot.
-     * @param {boolean} visible - Whether the meshes should be visible or not.
-     */
     set_mesh_visibility(engine, visible) {
         this.link_to_mesh_idxs_mapping.forEach(link_idxs => {
             link_idxs.forEach(idx => {
@@ -569,12 +242,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the visibility of the wireframe for a specific link.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {boolean} visible - Whether the wireframe should be visible or not.
-     */
     set_link_wireframe_visibility(engine, link_idx, visible) {
         let link_idxs = this.link_to_mesh_idxs_mapping[link_idx];
         link_idxs.forEach(idx => {
@@ -582,12 +249,6 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the visibility of the mesh for a specific link.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {boolean} visible - Whether the mesh should be visible or not.
-     */
     set_link_mesh_visibility(engine, link_idx, visible) {
         let link_idxs = this.link_to_mesh_idxs_mapping[link_idx];
         link_idxs.forEach(idx => {
@@ -595,97 +256,34 @@ export class RobotBaseClass {
         });
     }
 
-    /**
-     * Sets the visibility of the convex hull mesh for a specific link.
-     * @param {object} engine - The engine containing the robot.
-     * @param {number} link_idx - The index of the link.
-     * @param {boolean} visible - Whether the convex hull mesh should be visible or not.
-     */
-    set_link_convex_hull_mesh_visibility(engine, link_idx, visible) {
-        let link_idxs = this.link_to_convex_hull_mesh_idxs_mapping[link_idx];
-        link_idxs.forEach(idx => {
-            engine.mesh_objects[idx].visible = visible;
-        });
-    }
-
-    /**
-     * Sets the visibility of all convex hull meshes.
-     * @param {object} engine - The engine containing the robot.
-     * @param {boolean} visible - Whether the convex hull meshes should be visible or not.
-     */
-    set_convex_hull_mesh_visibility(engine, visible) {
-        this.link_to_convex_hull_mesh_idxs_mapping.forEach(link_idxs => {
-            link_idxs.forEach(idx => {
-                engine.mesh_objects[idx].visible = visible;
-            });
-        });
-    }
-
-    /**
-     * Gets the directory name where the robot's link meshes are stored.
-     * @returns {string} The directory name.
-     * @abstract
-     */
     get_robot_links_mesh_directory_name() {
         throw new Error("Method 'get_robot_links_mesh_directory_name()' must be implemented in the derived class.");
     }
 
-    /**
-     * Gets the name of the robot.
-     * @returns {string} The name of the robot.
-     * @abstract
-     */
     get_robot_name() {
         throw new Error("Method 'get_robot_name()' must be implemented in the derived class.");
     }
 
-    /**
-     * Gets the joints of the robot.
-     * @returns {RobotJointBaseClass[]} An array of joints.
-     * @abstract
-     */
     get_robot_joints() {
         throw new Error("Method 'get_robot_joints()' must be implemented in the derived class.");
     }
 
-    /**
-     * Gets the links of the robot.
-     * @returns {RobotLink[]} An array of links.
-     * @abstract
-     */
     get_robot_links() {
         throw new Error("Method 'get_robot_links()' must be implemented in the derived class.");
     }
 
-    /**
-     * Gets the kinematic hierarchy of the robot.
-     * @returns {number[][]} A 2D array representing the kinematic hierarchy.
-     * @abstract
-     */
     get_robot_kinematic_hierarchy() {
         throw new Error("Method 'get_robot_kinematic_hierarchy()' must be implemented in the derived class.");
     }
 
-    /**
-     * Gets the number of links in the robot.
-     * @returns {number} The number of links.
-     */
     num_links() {
         return this.links.length;
     }
 
-    /**
-     * Gets the number of joints in the robot.
-     * @returns {number} The number of joints.
-     */
     num_joints() {
         return this.joints.length;
     }
 
-    /**
-     * Gets the total number of degrees of freedom (DOFs) in the robot.
-     * @returns {number} The total number of DOFs.
-     */
     num_dofs() {
         let total = 0;
         this.joints.forEach(joint=> {
@@ -695,216 +293,6 @@ export class RobotBaseClass {
     }
 }
 
-// Get robot from robots_dir
-/**
- * Represents a robot loaded from preprocessed data.
- * Inherits from RobotBaseClass.
- * @class
- */
-export class RobotFromPreprocessor extends RobotBaseClass {
-    /**
-     * Creates an instance of a robot loaded from preprocessed data.
-     * @param {object} chain_config - The configuration of the robot's kinematic chain.
-     * @param {object} urdf_config - The URDF configuration of the robot.
-     * @param {object} original_mesh_config - The configuration of the original meshes.
-     * @param {object} plain_mesh_config - The configuration of the plain meshes.
-     * @param {string} display_mesh_type - The type of mesh to display (e.g., 'stl', 'glb', 'original_mesh').
-     * @param {object} convex_hull_mesh_config - The configuration of the convex hull meshes.
-     * @param {object} convex_decomposition_mesh_config - The configuration of the convex decomposition meshes.
-     * @param {object} bounding_box_config - The configuration of the bounding boxes.
-     * @param {string} robot_dir - The directory where the robot's files are stored.
-     */
-    constructor(
-        chain_config,
-        urdf_config,
-        original_mesh_config,
-        plain_mesh_config,
-        display_mesh_type,
-        convex_hull_mesh_config,
-        convex_decomposition_mesh_config,
-        bounding_box_config,
-        robot_dir
-    ) {
-        super();
-        this.robot_dir = robot_dir;
-        this.chain_config = chain_config;
-        this.urdf_config = urdf_config;
-        this.plain_mesh_config = plain_mesh_config;
-        this.original_mesh_config = original_mesh_config;
-        this.display_mesh_type = display_mesh_type;
-        this.convex_hull_mesh_config = convex_hull_mesh_config;
-        this.convex_decomposition_mesh_config = convex_decomposition_mesh_config;
-        this.bounding_box_config = bounding_box_config;
-
-        this.robot_links_mesh_directory_name = this.get_robot_links_mesh_directory_name();
-        this.robot_name = urdf_config.name;
-        this.joints = this.get_robot_joints();
-        this.links = this.get_robot_links();
-        this.kinematic_hierarchy = this.get_robot_kinematic_hierarchy();
-        this.already_spawned = false;
-        this.link_to_mesh_idxs_mapping = [];
-        this.link_to_convex_hull_mesh_idxs_mapping = [];
-    }
-
-    /**
-     * Gets the class corresponding to the joint type.
-     * @param {string} joint_type - The type of the joint.
-     * @returns {Function} The class constructor for the joint type.
-     */
-    get_joint_type(joint_type) {
-        // Determine joint type
-        if (joint_type === 'Fixed') return RobotJointFixed;
-        if (joint_type === 'Prismatic') return RobotJointPrismatic;
-        if (joint_type === 'Revolute') return RobotJointRevolute;
-        if (joint_type === 'Continuous') return RobotJointRevolute;
-        if (joint_type === 'Floating') return RobotJointFloating;
-        // Default to fixed joint
-        return RobotJointFixed;
-    }
-
-    /** @inheritdoc */
-    get_robot_links_mesh_directory_name() {
-        return this.robot_dir;
-    }
-
-    /** @inheritdoc */
-    get_robot_name() {
-        return this.robot_name;
-    }
-
-    /** @inheritdoc */
-    get_robot_joints() {
-        if (!this.chain_config || !this.urdf_config) return [];
-
-        let dof_idx = 0;
-        return this.chain_config.joints_in_chain.map(joint => {
-            const joint_urdf_geometry = this.urdf_config.joints.find(j => j.name === joint.joint_name);
-            if (!joint_urdf_geometry) {
-                console.log(`Failed to find URDF geometry for joint: ${joint.joint_name}`);
-                return null;
-            }
-            const JointClass = this.get_joint_type(joint_urdf_geometry.joint_type);
-
-            // Handle different constructors based on joint type
-            if (joint_urdf_geometry.joint_type === 'Fixed') {
-                return new JointClass(
-                    joint.joint_name,
-                    joint.joint_idx,
-                    joint.parent_link_idx,
-                    joint.child_link_idx,
-                    joint_urdf_geometry.origin.xyz,
-                    joint_urdf_geometry.origin.rpy,
-                );
-            } else if (
-                joint_urdf_geometry.joint_type === 'Continuous' ||
-                joint_urdf_geometry.joint_type === 'Revolute' ||
-                joint_urdf_geometry.joint_type === 'Prismatic'
-            ) {
-                let lower_lim = joint_urdf_geometry.limit.lower;
-                let upper_lim = joint_urdf_geometry.limit.upper;
-                if (joint_urdf_geometry.joint_type === 'Continuous') {
-                    lower_lim = -2 * Math.PI;
-                    upper_lim = 2 * Math.PI;
-                }
-                const jointInstance = new JointClass(
-                    joint.joint_name,
-                    joint.joint_idx,
-                    joint.parent_link_idx,
-                    joint.child_link_idx,
-                    dof_idx,
-                    [[joint_urdf_geometry.axis.xyz[0]], [joint_urdf_geometry.axis.xyz[1]], [joint_urdf_geometry.axis.xyz[2]]],// joint_urdf_geometry.axis.xyz, //
-                    lower_lim, // joint_urdf_geometry.limit.lower,
-                    upper_lim, // joint_urdf_geometry.limit.upper,
-                    joint_urdf_geometry.origin.xyz,
-                    joint_urdf_geometry.origin.rpy,
-                    dof_idx
-                );
-                dof_idx++;
-                return jointInstance;
-            } else if (joint_urdf_geometry.joint_type === 'Floating') {
-                const rotation_dof_idxs = [dof_idx, dof_idx + 1, dof_idx + 2];
-                const translation_dof_idxs = [dof_idx + 3, dof_idx + 4, dof_idx + 5];
-                const jointInstance = new JointClass(
-                    joint.joint_name,
-                    joint.joint_idx,
-                    joint.parent_link_idx,
-                    joint.child_link_idx,
-                    rotation_dof_idxs,
-                    translation_dof_idxs,
-                    joint_urdf_geometry.origin.xyz,
-                    joint_urdf_geometry.origin.rpy,
-                );
-                dof_idx += 6; // 3 for rotation + 3 for translation
-                return jointInstance;
-            }
-        });
-    }
-
-    /** @inheritdoc */
-    get_robot_links() {
-        if (!this.chain_config || !this.urdf_config) return [];
-
-        let mesh_paths;
-        if (this.display_mesh_type === 'stl') {
-            mesh_paths = this.plain_mesh_config.stl_link_mesh_relative_paths;
-        } else if (this.display_mesh_type === 'glb') {
-            mesh_paths = this.plain_mesh_config.glb_link_mesh_relative_paths;
-        } else if (this.display_mesh_type === 'original_mesh') {
-            mesh_paths = this.original_mesh_config.link_mesh_relative_paths;
-        } else if (this.display_mesh_type === 'convex_decomposition') {
-            mesh_paths = this.convex_decomposition_mesh_config.stl_link_mesh_relative_paths;
-        } else if (this.display_mesh_type === 'convex_hull') {
-            mesh_paths = this.convex_hull_mesh_config.stl_link_mesh_relative_paths;
-        }
-
-        return this.chain_config.links_in_chain.map(link => {
-            const link_urdf_geometry = this.urdf_config.links.find(l => l.name === link.name);
-
-            // let mesh_path = this.mesh_config.link_mesh_relative_paths[link.link_idx];
-            let mesh_path = mesh_paths[link.link_idx];
-            // const convex_hull_mesh_path = this.convex_hull_mesh_config.link_mesh_relative_paths[link.link_idx];
-            const convex_hull_mesh_path = this.convex_hull_mesh_config.stl_link_mesh_relative_paths[link.link_idx];
-
-            if (mesh_path === null) {
-                return new RobotLink(
-                    link.name,
-                    link.link_idx,
-                    link.parent_joint_idx,
-                    link.children_joint_idxs,
-                    link.parent_link_idx,
-                    link.children_link_idxs,
-                );
-            } else {
-                return new RobotLink(
-                    link.name,
-                    link.link_idx,
-                    link.parent_joint_idx,
-                    link.children_joint_idxs,
-                    link.parent_link_idx,
-                    link.children_link_idxs,
-                    mesh_path, //`${link.name}.glb`,
-                    convex_hull_mesh_path
-                );
-            }
-        });
-    }
-
-    /**
-     * Refreshes the robot's links by reloading them.
-     */
-    refresh_robot_links() {
-        this.robot_links = this.get_robot_links();
-        console.log('Robot links updated:', this.robot_links);
-    }
-
-    /** @inheritdoc */
-    get_robot_kinematic_hierarchy() {
-        if (!this.chain_config) return [];
-        return this.chain_config.kinematic_hierarchy;
-    }
-}
-
-/*
 export class XArm7Robot extends RobotBaseClass {
     constructor() {
         super();
@@ -1266,4 +654,3 @@ export class B1Z1Robot extends RobotBaseClass {
         return [[0], [1], [2, 3, 4, 10, 11, 17, 18, 24, 25, 31], [5, 6, 12, 13, 19, 20, 26, 27, 32], [7, 8, 14, 15, 21, 22, 28, 29, 33], [9, 16, 23, 30, 34], [35], [36], [37], [38], [39], [40]];
     }
 }
-*/

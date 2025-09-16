@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: utils_transform_gizmo.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: utils_transform_gizmo.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import * as THREE from 'three';
+import {
+    spawn_cube_base,
+    z_up_get_object_pose_as_SE3_matrix, z_up_get_object_pose_as_SO2_matrix_and_position,
+    z_up_get_object_pose_as_SO3_matrix_and_position,
+    z_up_set_object_pose_from_SE3_matrix, z_up_set_object_pose_from_SO2_matrix_and_position,
+    z_up_set_object_pose_from_SO3_matrix_and_position,
+    z_up_set_object_position
+} from "./utils_three.js";
+import {TransformControls} from 'three/examples/jsm/controls/TransformControls.js';
+import {unroll_matrix_to_list} from "./utils_math.js";
+
+/**
+ * A class that manages transform gizmos for manipulating 3D objects in a Three.js scene.
+ */
+export class TransformGizmoEngine {
+    /**
+     * Creates an instance of TransformGizmoEngine.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {number} [cube_dim=0.034] - The dimension of the cube used for gizmos.
+     */
+    constructor(three_engine, cube_dim=0.034) {
+        this.mode = "translate";
+
+        this.gizmo_mesh_objects = [];
+        this.gizmo_wireframe_objects = [];
+        this.gizmo_mesh_object_active = [];
+        this.transform_controls = [];
+        this.cube_dim = cube_dim;
+        for(let i = 0; i &lt; 30; i++) {
+            let mesh = spawn_cube_base(three_engine.scene, [0,0,0], cube_dim, cube_dim, cube_dim, 0x00eeff);
+
+            let wireframeMaterial = new THREE.LineBasicMaterial({color: 0x333333});
+            let wireframeGeometry = new THREE.WireframeGeometry(mesh.geometry);
+            let wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+            wireframe.visible = false;
+
+            mesh.add(wireframe);
+
+            z_up_set_object_position(mesh, 0,0,0);
+
+            mesh.visible = false;
+            wireframe.visible = false;
+
+            this.gizmo_mesh_objects.push(mesh);
+            this.gizmo_wireframe_objects.push(wireframe);
+            this.gizmo_mesh_object_active.push(false);
+            this.transform_controls.push(null);
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'm') {
+                if(this.mode === "rotate") {
+                    this.mode = "translate";
+                } else if (this.mode === "translate") {
+                    this.mode = "rotate";
+                }
+
+                this.transform_controls.forEach(transform_control => {
+                    if(transform_control) {
+                        transform_control.setMode(this.mode);
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * Finds the next available gizmo mesh object or creates more if necessary.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @returns {number} - The index of the available gizmo mesh object.
+     */
+    #get_next_available_gizmo_mesh_object(three_engine) {
+        for(let i=0; i&lt;this.gizmo_mesh_objects.length; i++) {
+            if(!this.gizmo_mesh_object_active[i]) {
+                this.gizmo_mesh_object_active[i] = true;
+                return i;
+            }
+        }
+
+        for(let i = 0; i &lt; 30; i++) {
+            let mesh = spawn_cube_base(three_engine.scene, [0,0,0], this.cube_dim, this.cube_dim, this.cube_dim, 0x00eeff);
+
+            let wireframeMaterial = new THREE.LineBasicMaterial({color: 0x333333});
+            let wireframeGeometry = new THREE.WireframeGeometry(mesh.geometry);
+            let wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+            wireframe.visible = false;
+
+            mesh.add(wireframe);
+
+            z_up_set_object_position(mesh, 0,0,0);
+
+            mesh.visible = false;
+            wireframe.visible = false;
+
+            this.gizmo_mesh_objects.push(mesh);
+            this.gizmo_wireframe_objects.push(wireframe);
+            this.gizmo_mesh_object_active.push(false);
+            this.transform_controls.push(null);
+        }
+        return this.#get_next_available_gizmo_mesh_object(three_engine);
+    }
+
+    /**
+     * Adds a gizmo with an initial SO3 rotation matrix and position.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {Array&lt;Array&lt;number>>} [init_SO3_matrix=[[1,0,0],[0,1,0],[0,0,1]]] - The initial SO3 rotation matrix.
+     * @param {Array&lt;Array&lt;number>>} [init_position=[[0], [0], [0]]] - The initial position vector.
+     * @param {number} [size=1] - The size of the gizmo.
+     * @returns {number} - The index of the added gizmo.
+     */
+    add_gizmo_SO3_matrix_and_position(three_engine, init_SO3_matrix = [[1,0,0],[0,1,0],[0,0,1]], init_position=[[0], [0], [0]], size=1) {
+        let idx = this.#get_next_available_gizmo_mesh_object(three_engine);
+        let gizmo_mesh_object = this.gizmo_mesh_objects[idx];
+        z_up_set_object_pose_from_SO3_matrix_and_position(gizmo_mesh_object, init_SO3_matrix, init_position);
+        return this.#add_gizmo_generic(three_engine, gizmo_mesh_object, idx, size);
+    }
+
+    /**
+     * Adds a gizmo with an initial SE3 transformation matrix.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {Array&lt;Array&lt;number>>} [init_SE3_matrix=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]] - The initial SE3 transformation matrix.
+     * @param {number} [size=1] - The size of the gizmo.
+     * @returns {number} - The index of the added gizmo.
+     */
+    add_gizmo_SE3_matrix(three_engine, init_SE3_matrix = [[1,0,0, 0],[0,1,0, 0],[0,0,1, 0], [0, 0, 0, 1]], size=1) {
+        let idx = this.#get_next_available_gizmo_mesh_object(three_engine);
+        let gizmo_mesh_object = this.gizmo_mesh_objects[idx];
+        z_up_set_object_pose_from_SE3_matrix(gizmo_mesh_object, init_SE3_matrix);
+        return this.#add_gizmo_generic(three_engine, gizmo_mesh_object, idx, size);
+    }
+
+    /**
+     * Adds a gizmo with an initial SO2 rotation matrix and position.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {Array&lt;Array&lt;number>>} [init_SO2_matrix=[[1,0],[0,1]]] - The initial SO2 rotation matrix.
+     * @param {Array&lt;Array&lt;number>>} [init_position=[[0], [0]]] - The initial position vector.
+     * @param {number} [size=1] - The size of the gizmo.
+     * @returns {number} - The index of the added gizmo.
+     */
+    add_gizmo_SO2_matrix_and_position(three_engine, init_SO2_matrix=[[1,0], [0,1]], init_position=[[0], [0]], size=1) {
+        let idx = this.#get_next_available_gizmo_mesh_object(three_engine);
+        let gizmo_mesh_object = this.gizmo_mesh_objects[idx];
+        z_up_set_object_pose_from_SO2_matrix_and_position(gizmo_mesh_object, init_SO2_matrix, init_position);
+        return this.#add_gizmo_generic(three_engine, gizmo_mesh_object, idx, size);
+    }
+
+    /**
+     * Removes a gizmo from the scene.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {number} idx - The index of the gizmo to remove.
+     */
+    remove_gizmo(three_engine, idx) {
+        this.transform_controls[idx].detach();
+        this.transform_controls[idx].visible = false;
+        this.gizmo_mesh_objects[idx].visible = false;
+        this.gizmo_mesh_object_active[idx] = false;
+    }
+
+    /**
+     * Sets the visibility of a specific gizmo.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {number} idx - The index of the gizmo.
+     * @param {boolean} visible - Whether the gizmo should be visible.
+     */
+    set_visibility_of_gizmo(three_engine, idx, visible) {
+        if(this.transform_controls[idx]) {
+            this.transform_controls[idx].visible = visible;
+            // this.gizmo_mesh_objects[idx].visible = visible;
+        }
+    }
+
+    /**
+     * Sets the visibility of all gizmos.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {boolean} visible - Whether the gizmos should be visible.
+     */
+    set_visibility_of_all_gizmos(three_engine, visible) {
+        for(let i=0; i &lt; this.gizmo_mesh_objects.length; i++) {
+            this.set_visibility_of_gizmo(three_engine, i, visible);
+        }
+    }
+
+    /**
+     * Adds a generic gizmo to the scene.
+     * @param {Object} three_engine - The Three.js rendering engine.
+     * @param {Object} gizmo_mesh_object - The mesh object representing the gizmo.
+     * @param {number} idx - The index of the gizmo.
+     * @param {number} [size=1] - The size of the gizmo.
+     * @returns {number} - The index of the added gizmo.
+     */
+    #add_gizmo_generic(three_engine, gizmo_mesh_object, idx, size=1) {
+        this.gizmo_mesh_object_active[idx] = true;
+        gizmo_mesh_object.visible = true;
+        this.gizmo_wireframe_objects[idx].visible = true;
+
+        let transform_control = new TransformControls(three_engine.camera, three_engine.renderer.domElement);
+        transform_control.size = size;
+        transform_control.setMode(this.mode);
+        three_engine.scene.add(transform_control);
+
+        transform_control.attach(gizmo_mesh_object);
+
+        transform_control.addEventListener('dragging-changed', function(event) {
+            three_engine.controls.enabled = !event.value;
+        });
+
+        this.transform_controls[idx] = transform_control;
+
+        return idx;
+    }
+
+    /**
+     * Gets the pose of a gizmo as an SO3 rotation matrix and position vector.
+     * @param {number} idx - The index of the gizmo.
+     * @returns {Array} - The SO3 rotation matrix and position vector, or null if inactive.
+     */
+    get_gizmo_pose_as_SO3_matrix_and_position(idx) {
+        if(!this.gizmo_mesh_object_active[idx]) { return null; }
+        return z_up_get_object_pose_as_SO3_matrix_and_position(this.gizmo_mesh_objects[idx]);
+    }
+
+    /**
+     * Gets the pose of a gizmo as an SO2 rotation matrix and position vector.
+     * @param {number} idx - The index of the gizmo.
+     * @returns {Array} - The SO2 rotation matrix and position vector, or null if inactive.
+     */
+    get_gizmo_pose_as_SO2_matrix_and_position(idx) {
+        if(!this.gizmo_mesh_object_active[idx]) { return null; }
+        return z_up_get_object_pose_as_SO2_matrix_and_position(this.gizmo_mesh_objects[idx]);
+    }
+
+    /**
+     * Gets the pose of a gizmo as an SE3 transformation matrix.
+     * @param {number} idx - The index of the gizmo.
+     * @returns {Array} - The SE3 transformation matrix, or null if inactive.
+     */
+    get_gizmo_pose_as_SE3_matrix(idx) {
+        if(!this.gizmo_mesh_object_active[idx]) { return null; }
+        return z_up_get_object_pose_as_SE3_matrix(this.gizmo_mesh_objects[idx]);
+    }
+
+    /**
+     * Sets the pose of a gizmo using an SO3 rotation matrix and position vector.
+     * @param {number} idx - The index of the gizmo.
+     * @param {Array&lt;Array&lt;number>>} [SO3_matrix=[[1,0,0],[0,1,0],[0,0,1]]] - The SO3 rotation matrix.
+     * @param {Array&lt;Array&lt;number>>} [position=[[0], [0], [0]]] - The position vector.
+     */
+    set_pose_of_gizmo_SO3_matrix_and_position(idx, SO3_matrix = [[1,0,0],[0,1,0],[0,0,1]], position=[[0], [0], [0]]) {
+        if(!this.gizmo_mesh_object_active[idx]) { return; }
+
+        z_up_set_object_pose_from_SO3_matrix_and_position(this.gizmo_mesh_objects[idx], SO3_matrix, position);
+    }
+
+    /**
+     * Sets the pose of a gizmo using an SO2 rotation matrix and position vector.
+     * @param {number} idx - The index of the gizmo.
+     * @param {Array&lt;Array&lt;number>>} [SO2_matrix=[[1,0], [0,1]]] - The SO2 rotation matrix.
+     * @param {Array&lt;Array&lt;number>>} [position=[[0], [0]]] - The position vector.
+     */
+    set_pose_of_gizmo_SO2_matrix_and_position(idx, SO2_matrix = [[1,0], [0,1]], position=[[0], [0]]) {
+        if(!this.gizmo_mesh_object_active[idx]) { return; }
+
+        z_up_set_object_pose_from_SO2_matrix_and_position(this.gizmo_mesh_objects[idx], SO2_matrix, position);
+    }
+
+    /**
+     * Sets the pose of a gizmo using an SE3 transformation matrix.
+     * @param {number} idx - The index of the gizmo.
+     * @param {Array&lt;Array&lt;number>>} SE3_matrix - The SE3 transformation matrix.
+     */
+    set_pose_of_gizmo_SE3_matrix(idx, SE3_matrix) {
+        if(!this.gizmo_mesh_object_active[idx]) { return; }
+
+        z_up_set_object_pose_from_SE3_matrix(this.gizmo_mesh_objects[idx], SE3_matrix);
+    }
+
+    /**
+     * Sets the position of a gizmo.
+     * @param {number} idx - The index of the gizmo.
+     * @param {Array&lt;Array&lt;number>>} position - The position vector.
+     */
+    set_position_of_gizmo(idx, position) {
+        if(!this.gizmo_mesh_object_active[idx]) { return; }
+
+        let p = unroll_matrix_to_list(position);
+        z_up_set_object_position(this.gizmo_mesh_objects[idx], p[0], p[1], p[2]);
+    }
+
+    /**
+     * Toggles the mode of the gizmo between "translate" and "rotate".
+     */
+    toggle_mode() {
+        if(this.mode === "rotate") {
+            this.mode = "translate";
+        } else if (this.mode === "translate") {
+            this.mode = "rotate";
+        }
+
+        this.transform_controls.forEach(transform_control => {
+            if(transform_control) {
+                transform_control.setMode(this.mode);
+            }
+        });
+    }
+}</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BSpline.html">BSpline</a></li><li><a href="BSplineVisualizer.html">BSplineVisualizer</a></li><li><a href="BSplineVisualizerHelper.html">BSplineVisualizerHelper</a></li><li><a href="BezierSplineSegment.html">BezierSplineSegment</a></li><li><a href="CardinalSplineSegment.html">CardinalSplineSegment</a></li><li><a href="CatmullRomSplineSegment.html">CatmullRomSplineSegment</a></li><li><a href="EulerAngleInterpolatorVisualizer.html">EulerAngleInterpolatorVisualizer</a></li><li><a href="EulerAnglesVisualizer.html">EulerAnglesVisualizer</a></li><li><a href="HermiteSplineSegment.html">HermiteSplineSegment</a></li><li><a href="ImplicitFunctionGrapher.html">ImplicitFunctionGrapher</a></li><li><a href="LinearSplineSegment.html">LinearSplineSegment</a></li><li><a href="NaturalSplineSegment.html">NaturalSplineSegment</a></li><li><a href="OptGoalPoseMatch.html">OptGoalPoseMatch</a></li><li><a href="OptGoalSpecPoseMatch_OptGoalSpecPoseMatch.html">OptGoalSpecPoseMatch</a></li><li><a href="OptimizationBFGS.html">OptimizationBFGS</a></li><li><a href="OptimizationResult.html">OptimizationResult</a></li><li><a href="ParametricCurveBaseClass.html">ParametricCurveBaseClass</a></li><li><a href="ParametricCurveLieGroupAndAlgebraUtil.html">ParametricCurveLieGroupAndAlgebraUtil</a></li><li><a href="ParametricCurveLineTest.html">ParametricCurveLineTest</a></li><li><a href="ParametricCurveThreeVisualizer.html">ParametricCurveThreeVisualizer</a></li><li><a href="ParametricCurveUnitCircle.html">ParametricCurveUnitCircle</a></li><li><a href="ParametricSurfaceBaseClass.html">ParametricSurfaceBaseClass</a></li><li><a href="ParametricSurfaceKleinBottle.html">ParametricSurfaceKleinBottle</a></li><li><a href="ParametricSurfaceLieGroupAndAlgebraUtil.html">ParametricSurfaceLieGroupAndAlgebraUtil</a></li><li><a href="ParametricSurfaceMobiusStrip.html">ParametricSurfaceMobiusStrip</a></li><li><a href="ParametricSurfaceSphere.html">ParametricSurfaceSphere</a></li><li><a href="ParametricSurfaceThreeVisualizer.html">ParametricSurfaceThreeVisualizer</a></li><li><a href="ParametricSurfaceTorus.html">ParametricSurfaceTorus</a></li><li><a href="ParametricSurfaceWaves.html">ParametricSurfaceWaves</a></li><li><a href="PolynomialBasedSpline.html">PolynomialBasedSpline</a></li><li><a href="PolynomialSplineSegmentBaseClass.html">PolynomialSplineSegmentBaseClass</a></li><li><a href="PolynomialSplineSegmentVisualizer.html">PolynomialSplineSegmentVisualizer</a></li><li><a href="PolynomialSplineSegmentVisualizerHelper.html">PolynomialSplineSegmentVisualizerHelper</a></li><li><a href="PolynomialSplineVisualizer.html">PolynomialSplineVisualizer</a></li><li><a href="PolynomialSplineVisualizerHelper.html">PolynomialSplineVisualizerHelper</a></li><li><a href="QuadraticSplineSegment.html">QuadraticSplineSegment</a></li><li><a href="RobotBaseClass.html">RobotBaseClass</a></li><li><a href="RobotFKSlidersVisualizer.html">RobotFKSlidersVisualizer</a></li><li><a href="RobotFromPreprocessor.html">RobotFromPreprocessor</a></li><li><a href="RobotJointBaseClass.html">RobotJointBaseClass</a></li><li><a href="RobotJointFixed.html">RobotJointFixed</a></li><li><a href="RobotJointFloating.html">RobotJointFloating</a></li><li><a href="RobotJointPrismatic.html">RobotJointPrismatic</a></li><li><a href="RobotJointRevolute.html">RobotJointRevolute</a></li><li><a href="RobotLink.html">RobotLink</a></li><li><a href="RobotOptVisualizer.html">RobotOptVisualizer</a></li><li><a href="TransformGizmoEngine.html">TransformGizmoEngine</a></li></ul><h3>Global</h3><ul><li><a href="global.html#add_complex_numbers">add_complex_numbers</a></li><li><a href="global.html#add_matrix_matrix">add_matrix_matrix</a></li><li><a href="global.html#add_wxyz_quaternions">add_wxyz_quaternions</a></li><li><a href="global.html#apply_global_rotation">apply_global_rotation</a></li><li><a href="global.html#arclength_parameterize_spline_interpolate">arclength_parameterize_spline_interpolate</a></li><li><a href="global.html#backtracking_line_search">backtracking_line_search</a></li><li><a href="global.html#calculate_visible_domain">calculate_visible_domain</a></li><li><a href="global.html#convert_3D_point_to_dual_quaternion">convert_3D_point_to_dual_quaternion</a></li><li><a href="global.html#convert_dual_quaternion_to_3D_point">convert_dual_quaternion_to_3D_point</a></li><li><a href="global.html#convert_scalar_vector_to_wxyz_quaternion">convert_scalar_vector_to_wxyz_quaternion</a></li><li><a href="global.html#convert_wxyz_to_scalar_vector_quaternion">convert_wxyz_to_scalar_vector_quaternion</a></li><li><a href="global.html#create_gridlines">create_gridlines</a></li><li><a href="global.html#create_parameterization">create_parameterization</a></li><li><a href="global.html#cross_product">cross_product</a></li><li><a href="global.html#cross_product_unrolled">cross_product_unrolled</a></li><li><a href="global.html#determinant3x3">determinant3x3</a></li><li><a href="global.html#displacement_pose_SO2_and_position">displacement_pose_SO2_and_position</a></li><li><a href="global.html#displacement_pose_SO3_and_position">displacement_pose_SO3_and_position</a></li><li><a href="global.html#distance_to_origin">distance_to_origin</a></li><li><a href="global.html#div_matrix_scalar">div_matrix_scalar</a></li><li><a href="global.html#dot">dot</a></li><li><a href="global.html#dot_product">dot_product</a></li><li><a href="global.html#dot_product_unrolled">dot_product_unrolled</a></li><li><a href="global.html#draw_2d_function">draw_2d_function</a></li><li><a href="global.html#draw_3d_function">draw_3d_function</a></li><li><a href="global.html#draw_bounding_sphere">draw_bounding_sphere</a></li><li><a href="global.html#draw_decomposed_bounding_sphere">draw_decomposed_bounding_sphere</a></li><li><a href="global.html#draw_decomposed_obb">draw_decomposed_obb</a></li><li><a href="global.html#draw_euler_angle_intermediate_coordinate_frame">draw_euler_angle_intermediate_coordinate_frame</a></li><li><a href="global.html#draw_obb">draw_obb</a></li><li><a href="global.html#dual_quaternion_conj_sharp">dual_quaternion_conj_sharp</a></li><li><a href="global.html#dual_quaternion_conj_star">dual_quaternion_conj_star</a></li><li><a href="global.html#dual_quaternion_norm">dual_quaternion_norm</a></li><li><a href="global.html#exp_h1_to_H1_scalar_vector">exp_h1_to_H1_scalar_vector</a></li><li><a href="global.html#exp_h1_to_H1_wxyz">exp_h1_to_H1_wxyz</a></li><li><a href="global.html#exp_se2_to_SE2">exp_se2_to_SE2</a></li><li><a href="global.html#exp_se3_to_SE3">exp_se3_to_SE3</a></li><li><a href="global.html#exp_so2_and_v_to_SO2_and_t">exp_so2_and_v_to_SO2_and_t</a></li><li><a href="global.html#exp_so2_to_SO2">exp_so2_to_SO2</a></li><li><a href="global.html#exp_so3_and_v_to_SO3_and_t">exp_so3_and_v_to_SO3_and_t</a></li><li><a href="global.html#exp_so3_to_SO3">exp_so3_to_SO3</a></li><li><a href="global.html#factorial">factorial</a></li><li><a href="global.html#forward_kinematics_SE3">forward_kinematics_SE3</a></li><li><a href="global.html#forward_kinematics_SO3_and_position">forward_kinematics_SO3_and_position</a></li><li><a href="global.html#forward_kinematics_SO3_and_position_all">forward_kinematics_SO3_and_position_all</a></li><li><a href="global.html#frobenius_norm_matrix">frobenius_norm_matrix</a></li><li><a href="global.html#get_arclength_components">get_arclength_components</a></li><li><a href="global.html#get_bounding_sphere_offset">get_bounding_sphere_offset</a></li><li><a href="global.html#get_bounding_sphere_radius">get_bounding_sphere_radius</a></li><li><a href="global.html#get_curve_exp_0_points">get_curve_exp_0_points</a></li><li><a href="global.html#get_curve_exp_tx_points">get_curve_exp_tx_points</a></li><li><a href="global.html#get_curve_exp_x_points">get_curve_exp_x_points</a></li><li><a href="global.html#get_decomposed_bounding_sphere_offset">get_decomposed_bounding_sphere_offset</a></li><li><a href="global.html#get_decomposed_bounding_sphere_radius">get_decomposed_bounding_sphere_radius</a></li><li><a href="global.html#get_decomposition_obb_RPY">get_decomposition_obb_RPY</a></li><li><a href="global.html#get_decomposition_obb_half_extents">get_decomposition_obb_half_extents</a></li><li><a href="global.html#get_decomposition_obb_offset">get_decomposition_obb_offset</a></li><li><a href="global.html#get_obb_RPY">get_obb_RPY</a></li><li><a href="global.html#get_obb_half_extents">get_obb_half_extents</a></li><li><a href="global.html#get_obb_offset">get_obb_offset</a></li><li><a href="global.html#get_rotation_so3_matrix">get_rotation_so3_matrix</a></li><li><a href="global.html#get_rpy_SO3_matrix">get_rpy_SO3_matrix</a></li><li><a href="global.html#get_rpy_wxyz_quaternion">get_rpy_wxyz_quaternion</a></li><li><a href="global.html#get_surface_exp_0_points">get_surface_exp_0_points</a></li><li><a href="global.html#get_surface_exp_tx_points">get_surface_exp_tx_points</a></li><li><a href="global.html#get_surface_exp_x_points">get_surface_exp_x_points</a></li><li><a href="global.html#get_x_rotation_so3_matrix">get_x_rotation_so3_matrix</a></li><li><a href="global.html#get_xyz_rpy_SE3_matrix">get_xyz_rpy_SE3_matrix</a></li><li><a href="global.html#get_y_rotation_so3_matrix">get_y_rotation_so3_matrix</a></li><li><a href="global.html#get_z_rotation_so3_matrix">get_z_rotation_so3_matrix</a></li><li><a href="global.html#gradient_fd">gradient_fd</a></li><li><a href="global.html#identity_matrix">identity_matrix</a></li><li><a href="global.html#interpolate_poses_SO2_and_position">interpolate_poses_SO2_and_position</a></li><li><a href="global.html#interpolate_poses_SO3_and_position">interpolate_poses_SO3_and_position</a></li><li><a href="global.html#inverse_kinematics_SO3_and_position">inverse_kinematics_SO3_and_position</a></li><li><a href="global.html#inverse_pose_SO2_and_position">inverse_pose_SO2_and_position</a></li><li><a href="global.html#inverse_pose_SO3_and_position">inverse_pose_SO3_and_position</a></li><li><a href="global.html#ln_H1_to_h1_scalar_vector">ln_H1_to_h1_scalar_vector</a></li><li><a href="global.html#ln_H1_to_h1_wxyz">ln_H1_to_h1_wxyz</a></li><li><a href="global.html#ln_SE2_to_se2">ln_SE2_to_se2</a></li><li><a href="global.html#ln_SE3_to_se3">ln_SE3_to_se3</a></li><li><a href="global.html#ln_SO2_and_t_to_so2_and_v">ln_SO2_and_t_to_so2_and_v</a></li><li><a href="global.html#ln_SO2_to_so2">ln_SO2_to_so2</a></li><li><a href="global.html#ln_SO3_and_t_to_so3_and_v">ln_SO3_and_t_to_so3_and_v</a></li><li><a href="global.html#ln_SO3_to_so3">ln_SO3_to_so3</a></li><li><a href="global.html#map_pose_SO2_and_position">map_pose_SO2_and_position</a></li><li><a href="global.html#map_pose_SO3_and_position">map_pose_SO3_and_position</a></li><li><a href="global.html#matrix_inverse_3x3">matrix_inverse_3x3</a></li><li><a href="global.html#matrix_to_quaternion">matrix_to_quaternion</a></li><li><a href="global.html#minimize_GradientDescent">minimize_GradientDescent</a></li><li><a href="global.html#minimize_L_BFGS">minimize_L_BFGS</a></li><li><a href="global.html#minimize_Powell">minimize_Powell</a></li><li><a href="global.html#mul_complex_numbers">mul_complex_numbers</a></li><li><a href="global.html#mul_dual_quaternions">mul_dual_quaternions</a></li><li><a href="global.html#mul_matrix_matrix">mul_matrix_matrix</a></li><li><a href="global.html#mul_matrix_scalar">mul_matrix_scalar</a></li><li><a href="global.html#mul_scalar_vector_quaternions">mul_scalar_vector_quaternions</a></li><li><a href="global.html#mul_wxyz_quaternions">mul_wxyz_quaternions</a></li><li><a href="global.html#normalized_matrix">normalized_matrix</a></li><li><a href="global.html#optimization_bfgs">optimization_bfgs</a></li><li><a href="global.html#optimization_dummy">optimization_dummy</a></li><li><a href="global.html#optimization_gradient_descent">optimization_gradient_descent</a></li><li><a href="global.html#optimization_powell">optimization_powell</a></li><li><a href="global.html#optimization_solve">optimization_solve</a></li><li><a href="global.html#print_var_to_document">print_var_to_document</a></li><li><a href="global.html#proj">proj</a></li><li><a href="global.html#proj_pt_onto_line">proj_pt_onto_line</a></li><li><a href="global.html#proj_scalar">proj_scalar</a></li><li><a href="global.html#pt_dis_to_line">pt_dis_to_line</a></li><li><a href="global.html#quaternion_conj_scalar_vector">quaternion_conj_scalar_vector</a></li><li><a href="global.html#quaternion_conj_wxyz">quaternion_conj_wxyz</a></li><li><a href="global.html#robot_kinematic_opt">robot_kinematic_opt</a></li><li><a href="global.html#roll_list_into_column_vec_matrix">roll_list_into_column_vec_matrix</a></li><li><a href="global.html#roll_list_into_matrix">roll_list_into_matrix</a></li><li><a href="global.html#roll_list_into_row_vec_matrix">roll_list_into_row_vec_matrix</a></li><li><a href="global.html#sandwich_product_scalar_vector_quaternion_and_point">sandwich_product_scalar_vector_quaternion_and_point</a></li><li><a href="global.html#sandwich_product_wxyz_quaternion_and_point">sandwich_product_wxyz_quaternion_and_point</a></li><li><a href="global.html#scalar_to_so2_mat">scalar_to_so2_mat</a></li><li><a href="global.html#se2_mat_to_vec3">se2_mat_to_vec3</a></li><li><a href="global.html#se3_mat_to_vec6">se3_mat_to_vec6</a></li><li><a href="global.html#set_object_orientation_from_SO2_matrix">set_object_orientation_from_SO2_matrix</a></li><li><a href="global.html#set_object_orientation_from_SO3_matrix">set_object_orientation_from_SO3_matrix</a></li><li><a href="global.html#set_object_orientation_from_U1_complex_number">set_object_orientation_from_U1_complex_number</a></li><li><a href="global.html#set_object_orientation_from_scalar_vector_quaternion">set_object_orientation_from_scalar_vector_quaternion</a></li><li><a href="global.html#set_object_orientation_from_wxyz_quaternion">set_object_orientation_from_wxyz_quaternion</a></li><li><a href="global.html#set_object_pose_from_SE2_matrix">set_object_pose_from_SE2_matrix</a></li><li><a href="global.html#set_object_pose_from_SE3_matrix">set_object_pose_from_SE3_matrix</a></li><li><a href="global.html#set_object_pose_from_SO2_matrix_and_position">set_object_pose_from_SO2_matrix_and_position</a></li><li><a href="global.html#set_object_pose_from_SO3_matrix_and_position">set_object_pose_from_SO3_matrix_and_position</a></li><li><a href="global.html#set_object_pose_from_scalar_vector_quaternion_and_position">set_object_pose_from_scalar_vector_quaternion_and_position</a></li><li><a href="global.html#set_object_pose_from_wxyz_quaternion_and_position">set_object_pose_from_wxyz_quaternion_and_position</a></li><li><a href="global.html#set_object_position_2D">set_object_position_2D</a></li><li><a href="global.html#set_object_position_3D">set_object_position_3D</a></li><li><a href="global.html#set_robot_state">set_robot_state</a></li><li><a href="global.html#set_robot_state_from_SE3_fk_result">set_robot_state_from_SE3_fk_result</a></li><li><a href="global.html#set_robot_state_from_SO3_and_position_fk_result">set_robot_state_from_SO3_and_position_fk_result</a></li><li><a href="global.html#shuffleIndicesOf">shuffleIndicesOf</a></li><li><a href="global.html#so2_mat_to_scalar">so2_mat_to_scalar</a></li><li><a href="global.html#so3_and_v_to_vec6">so3_and_v_to_vec6</a></li><li><a href="global.html#so3_mat_to_vec3">so3_mat_to_vec3</a></li><li><a href="global.html#sub_matrix_matrix">sub_matrix_matrix</a></li><li><a href="global.html#transpose">transpose</a></li><li><a href="global.html#unroll_matrix_to_list">unroll_matrix_to_list</a></li><li><a href="global.html#vec3_to_se2_mat">vec3_to_se2_mat</a></li><li><a href="global.html#vec3_to_so3_mat">vec3_to_so3_mat</a></li><li><a href="global.html#vec6_to_se3_mat">vec6_to_se3_mat</a></li><li><a href="global.html#vec6_to_so3_and_v">vec6_to_so3_and_v</a></li><li><a href="global.html#vect_a_minus_b">vect_a_minus_b</a></li><li><a href="global.html#vect_max_abs_x_less_eps">vect_max_abs_x_less_eps</a></li><li><a href="global.html#vect_x_pluseq_ag">vect_x_pluseq_ag</a></li><li><a href="global.html#visualize_robot">visualize_robot</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Sun Sep 01 2024 17:05:37 GMT-0400 (Eastern Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

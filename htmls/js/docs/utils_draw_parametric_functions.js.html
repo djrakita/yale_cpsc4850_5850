@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: utils_draw_parametric_functions.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: utils_draw_parametric_functions.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import * as THREE from 'three';
+import { ParametricGeometry } from 'three/examples/jsm/geometries/ParametricGeometry.js';
+
+/**
+ * Draws a 2D function as a series of connected lines in the scene.
+ *
+ * @param {Object} engine - The rendering engine, including the scene, camera, and renderer.
+ * @param {Function} function_to_draw - The function to graph. It should take a single argument (x) and return a scalar value (y).
+ * @param {Array&lt;number>} [domain=null] - The domain of the function to graph, as a two-element array [min, max].
+ * @param {number} [samples=null] - The number of samples to take across the domain.
+ * @param {number} [color=0x000000] - The color of the graph.
+ * @returns {Object} An object containing the `update` method to refresh the graph.
+ */
+export function draw_2d_function(engine, function_to_draw, domain = null, samples = null, color = 0x000000) {
+    /**
+     * Updates the graph based on the function and parameters provided.
+     *
+     * @param {boolean} [changed=true] - Whether the graph should be updated.
+     */
+    function update(changed = true) {
+        if (!changed) {
+            return;
+        }
+
+        // Get viewing space dimensions
+        const viewWidth = window.innerWidth;
+        const viewHeight = window.innerHeight;
+
+        // If the domain is not preset, set it to fill the viewing space
+        let curr_domain = domain;
+        if (domain == null) {
+            curr_domain = [-viewWidth / 2, viewWidth / 2];
+        }
+
+        // Set default sample number
+        let curr_samples = samples;
+        if (samples == null) {
+            curr_samples = 10 * Math.ceil(curr_domain[1] - curr_domain[0]);
+        }
+
+        const step = (curr_domain[1] - curr_domain[0]) / curr_samples;
+        let p1, p2;
+        for (let i = 0; i &lt; curr_samples; i++) {
+            let x1 = curr_domain[0] + i * step;
+            let x2 = curr_domain[0] + (i + 1) * step;
+
+            p1 = [x1, function_to_draw(x1)];
+            p2 = [x2, function_to_draw(x2)];
+
+            engine.draw_debug_line(p1, p2, true, 0.01, color);
+        }
+    }
+    update();
+
+    // Return the update function
+    return {
+        update: update
+    };
+}
+
+/**
+ * Creates a parametric geometry based on a function and domain.
+ *
+ * @param {Function} function_to_draw - The function to graph. It should take two arguments (x, y) and return a scalar value (z).
+ * @param {number} width_segments - The number of segments along the width.
+ * @param {number} height_segments - The number of segments along the height.
+ * @param {Array&lt;Array&lt;number>>} domain - The domain of the function to graph, as a 2D array [[x_min, x_max], [y_min, y_max]].
+ * @returns {ParametricGeometry} The generated parametric geometry.
+ */
+function create_parameterization(function_to_draw, width_segments, height_segments, domain) {
+    return new ParametricGeometry((u, v, target) => {
+        const x = domain[0][0] + u * (domain[0][1] - domain[0][0]);
+        const y = domain[1][0] + v * (domain[1][1] - domain[1][0]);
+        const z = function_to_draw(x, y);
+        target.set(x, z, y); // up direction is y
+    }, width_segments, height_segments);
+}
+
+/**
+ * Calculates the visible domain of the camera based on its frustum and a specified distance.
+ *
+ * @param {THREE.Camera} camera - The camera used to calculate the visible domain.
+ * @param {number} z_dist - The distance along the Z-axis.
+ * @returns {Array&lt;Array&lt;number>>} The calculated visible domain as a 2D array [[x_min, x_max], [y_min, y_max]].
+ */
+function calculate_visible_domain(camera, z_dist) {
+    const frustumHeight = Math.abs(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * z_dist);
+    const frustumWidth = Math.abs(frustumHeight * camera.aspect);
+    const largest = Math.round(Math.max(frustumWidth, frustumHeight)) + 1;
+    return [
+        [-largest, largest],
+        [-largest, largest]
+    ];
+}
+
+/**
+ * Creates grid lines for visualizing a function over a domain.
+ *
+ * @param {Function} function_to_draw - The function to graph. It should take two arguments (x, y) and return a scalar value (z).
+ * @param {number} width_segments - The number of segments along the width.
+ * @param {number} height_segments - The number of segments along the height.
+ * @param {Array&lt;Array&lt;number>>} domain - The domain of the function to graph, as a 2D array [[x_min, x_max], [y_min, y_max]].
+ * @param {boolean} [draw_axes_only=false] - Whether to draw only the axes lines.
+ * @returns {THREE.LineSegments} The generated grid lines.
+ */
+function create_gridlines(function_to_draw, width_segments, height_segments, domain, draw_axes_only = false) {
+    const gridGeometry = new THREE.BufferGeometry();
+    const vertices = [];
+
+    // Vertical contours
+    for (let i = 0; i &lt;= width_segments; i++) {
+        const u = i / width_segments;
+        const x = domain[0][0] + u * (domain[0][1] - domain[0][0]);
+
+        if (!draw_axes_only) {
+            if (x - Math.floor(x) > 0.001 &amp;&amp; Math.ceil(x) - x > 0.001) {
+                continue;
+            }
+        } else {
+            if (x !== 0) {
+                continue;
+            }
+        }
+
+        for (let j = 0; j &lt; height_segments; j++) {
+            const v1 = j / height_segments;
+            const v2 = (j + 1) / height_segments;
+            const y1 = domain[1][0] + v1 * (domain[1][1] - domain[1][0]);
+            const y2 = domain[1][0] + v2 * (domain[1][1] - domain[1][0]);
+
+            vertices.push(x, function_to_draw(x, y1), y1);
+            vertices.push(x, function_to_draw(x, y2), y2);
+        }
+    }
+
+    // Horizontal contours
+    for (let j = 0; j &lt;= height_segments; j++) {
+        const v = j / height_segments;
+        const y = domain[1][0] + v * (domain[1][1] - domain[1][0]);
+
+        if (!draw_axes_only) {
+            if (y - Math.floor(y) > 0.001 &amp;&amp; Math.ceil(y) - y > 0.001) {
+                continue;
+            }
+        } else {
+            if (y !== 0) {
+                continue;
+            }
+        }
+
+        for (let i = 0; i &lt; width_segments; i++) {
+            const u1 = i / width_segments;
+            const u2 = (i + 1) / width_segments;
+            const x1 = domain[0][0] + u1 * (domain[0][1] - domain[0][0]);
+            const x2 = domain[0][0] + u2 * (domain[0][1] - domain[0][0]);
+
+            vertices.push(x1, function_to_draw(x1, y), y);
+            vertices.push(x2, function_to_draw(x2, y), y);
+        }
+    }
+
+    gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+    const gridLines = new THREE.LineSegments(gridGeometry, gridMaterial);
+
+    return gridLines;
+}
+
+/**
+ * Computes the distance from the camera to the origin.
+ *
+ * @param {THREE.Camera} camera - The camera from which to measure the distance.
+ * @returns {number} The distance from the camera to the origin.
+ */
+export function distance_to_origin(camera) {
+    const origin = new THREE.Vector3(0, 0, 0);
+    const cameraPosition = camera.position.clone();
+    return cameraPosition.distanceTo(origin);
+}
+
+/**
+ * Draws a 3D function as a surface mesh in the scene.
+ *
+ * @param {Object} engine - The rendering engine, including the scene, camera, and renderer.
+ * @param {Function} function_to_draw - The function to graph. It should take two arguments (x, y) and return a scalar value (z).
+ * @param {number} [width_segments=null] - The number of segments along the width.
+ * @param {number} [height_segments=null] - The number of segments along the height.
+ * @param {Array&lt;Array&lt;number>>} [domain=null] - The domain of the function to graph, as a 2D array [[x_min, x_max], [y_min, y_max]].
+ * @param {number} [color=0x00ffff] - The color of the surface mesh.
+ * @returns {Object} An object containing the `update` method to refresh the graph.
+ */
+export function draw_3d_function(engine, function_to_draw, width_segments = null, height_segments = null, domain = null, color = 0x00ffff) {
+    let mesh;
+    let gridLines;
+
+    /**
+     * Updates the graph based on the function and parameters provided.
+     *
+     * @param {boolean} [changed=true] - Whether the graph should be updated.
+     */
+    function update(changed = true) {
+        if (!changed) {
+            return;
+        }
+
+        let z_dist = engine.camera.position.z;
+
+        // Create a clipping plane at the specified height
+        const clip_height = distance_to_origin(engine.camera) / 2;
+        const clipping_plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), clip_height);
+
+        // Enable clipping in the renderer
+        engine.renderer.clippingPlanes = [clipping_plane];
+
+        // Calculate domain based on the camera frustum
+        let curr_domain = domain;
+        if (domain == null) {
+            curr_domain = calculate_visible_domain(engine.camera, z_dist);
+        }
+
+        // Set default sample number for widthSegments and heightSegments
+        let curr_width_segments = width_segments;
+        let curr_height_segments = height_segments;
+        if (width_segments == null) {
+            curr_width_segments = Math.min(
+                10 * Math.ceil(curr_domain[0][1] - curr_domain[0][0]),
+                1000
+            );
+        }
+        if (height_segments == null) {
+            curr_height_segments = Math.min(
+                10 * Math.ceil(curr_domain[0][1] - curr_domain[0][0]),
+                1000
+            );
+        }
+
+        if (mesh) {
+            engine.scene.remove(mesh);
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+        }
+
+        if (gridLines) {
+            engine.scene.remove(gridLines);
+            gridLines.geometry.dispose();
+            gridLines.material.dispose();
+        }
+
+        const geometry = create_parameterization(function_to_draw, curr_width_segments, curr_height_segments, curr_domain);
+        const material = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.7,
+            side: THREE.DoubleSide, // Make back faces visible
+            clippingPlanes: [clipping_plane]  // Apply clipping plane
+        });
+        mesh = new THREE.Mesh(geometry, material);
+
+        engine.scene.add(mesh);
+
+        // Create and add gridlines
+        let draw_axis_only = false;
+        if (clip_height > 20) {
+            draw_axis_only = true;
+        }
+        gridLines = create_gridlines(function_to_draw, curr_width_segments, curr_height_segments, curr_domain, draw_axis_only);
+        engine.scene.add(gridLines);
+    }
+
+    return {
+        update: update
+    };
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BSpline.html">BSpline</a></li><li><a href="BSplineVisualizer.html">BSplineVisualizer</a></li><li><a href="BSplineVisualizerHelper.html">BSplineVisualizerHelper</a></li><li><a href="BezierSplineSegment.html">BezierSplineSegment</a></li><li><a href="CardinalSplineSegment.html">CardinalSplineSegment</a></li><li><a href="CatmullRomSplineSegment.html">CatmullRomSplineSegment</a></li><li><a href="EulerAngleInterpolatorVisualizer.html">EulerAngleInterpolatorVisualizer</a></li><li><a href="EulerAnglesVisualizer.html">EulerAnglesVisualizer</a></li><li><a href="HermiteSplineSegment.html">HermiteSplineSegment</a></li><li><a href="ImplicitFunctionGrapher.html">ImplicitFunctionGrapher</a></li><li><a href="LinearSplineSegment.html">LinearSplineSegment</a></li><li><a href="NaturalSplineSegment.html">NaturalSplineSegment</a></li><li><a href="OptGoalPoseMatch.html">OptGoalPoseMatch</a></li><li><a href="OptGoalSpecPoseMatch_OptGoalSpecPoseMatch.html">OptGoalSpecPoseMatch</a></li><li><a href="OptimizationBFGS.html">OptimizationBFGS</a></li><li><a href="OptimizationResult.html">OptimizationResult</a></li><li><a href="ParametricCurveBaseClass.html">ParametricCurveBaseClass</a></li><li><a href="ParametricCurveLieGroupAndAlgebraUtil.html">ParametricCurveLieGroupAndAlgebraUtil</a></li><li><a href="ParametricCurveLineTest.html">ParametricCurveLineTest</a></li><li><a href="ParametricCurveThreeVisualizer.html">ParametricCurveThreeVisualizer</a></li><li><a href="ParametricCurveUnitCircle.html">ParametricCurveUnitCircle</a></li><li><a href="ParametricSurfaceBaseClass.html">ParametricSurfaceBaseClass</a></li><li><a href="ParametricSurfaceKleinBottle.html">ParametricSurfaceKleinBottle</a></li><li><a href="ParametricSurfaceLieGroupAndAlgebraUtil.html">ParametricSurfaceLieGroupAndAlgebraUtil</a></li><li><a href="ParametricSurfaceMobiusStrip.html">ParametricSurfaceMobiusStrip</a></li><li><a href="ParametricSurfaceSphere.html">ParametricSurfaceSphere</a></li><li><a href="ParametricSurfaceThreeVisualizer.html">ParametricSurfaceThreeVisualizer</a></li><li><a href="ParametricSurfaceTorus.html">ParametricSurfaceTorus</a></li><li><a href="ParametricSurfaceWaves.html">ParametricSurfaceWaves</a></li><li><a href="PolynomialBasedSpline.html">PolynomialBasedSpline</a></li><li><a href="PolynomialSplineSegmentBaseClass.html">PolynomialSplineSegmentBaseClass</a></li><li><a href="PolynomialSplineSegmentVisualizer.html">PolynomialSplineSegmentVisualizer</a></li><li><a href="PolynomialSplineSegmentVisualizerHelper.html">PolynomialSplineSegmentVisualizerHelper</a></li><li><a href="PolynomialSplineVisualizer.html">PolynomialSplineVisualizer</a></li><li><a href="PolynomialSplineVisualizerHelper.html">PolynomialSplineVisualizerHelper</a></li><li><a href="QuadraticSplineSegment.html">QuadraticSplineSegment</a></li><li><a href="RobotBaseClass.html">RobotBaseClass</a></li><li><a href="RobotFKSlidersVisualizer.html">RobotFKSlidersVisualizer</a></li><li><a href="RobotFromPreprocessor.html">RobotFromPreprocessor</a></li><li><a href="RobotJointBaseClass.html">RobotJointBaseClass</a></li><li><a href="RobotJointFixed.html">RobotJointFixed</a></li><li><a href="RobotJointFloating.html">RobotJointFloating</a></li><li><a href="RobotJointPrismatic.html">RobotJointPrismatic</a></li><li><a href="RobotJointRevolute.html">RobotJointRevolute</a></li><li><a href="RobotLink.html">RobotLink</a></li><li><a href="RobotOptVisualizer.html">RobotOptVisualizer</a></li><li><a href="TransformGizmoEngine.html">TransformGizmoEngine</a></li></ul><h3>Global</h3><ul><li><a href="global.html#add_complex_numbers">add_complex_numbers</a></li><li><a href="global.html#add_matrix_matrix">add_matrix_matrix</a></li><li><a href="global.html#add_wxyz_quaternions">add_wxyz_quaternions</a></li><li><a href="global.html#apply_global_rotation">apply_global_rotation</a></li><li><a href="global.html#arclength_parameterize_spline_interpolate">arclength_parameterize_spline_interpolate</a></li><li><a href="global.html#backtracking_line_search">backtracking_line_search</a></li><li><a href="global.html#calculate_visible_domain">calculate_visible_domain</a></li><li><a href="global.html#convert_3D_point_to_dual_quaternion">convert_3D_point_to_dual_quaternion</a></li><li><a href="global.html#convert_dual_quaternion_to_3D_point">convert_dual_quaternion_to_3D_point</a></li><li><a href="global.html#convert_scalar_vector_to_wxyz_quaternion">convert_scalar_vector_to_wxyz_quaternion</a></li><li><a href="global.html#convert_wxyz_to_scalar_vector_quaternion">convert_wxyz_to_scalar_vector_quaternion</a></li><li><a href="global.html#create_gridlines">create_gridlines</a></li><li><a href="global.html#create_parameterization">create_parameterization</a></li><li><a href="global.html#cross_product">cross_product</a></li><li><a href="global.html#cross_product_unrolled">cross_product_unrolled</a></li><li><a href="global.html#determinant3x3">determinant3x3</a></li><li><a href="global.html#displacement_pose_SO2_and_position">displacement_pose_SO2_and_position</a></li><li><a href="global.html#displacement_pose_SO3_and_position">displacement_pose_SO3_and_position</a></li><li><a href="global.html#distance_to_origin">distance_to_origin</a></li><li><a href="global.html#div_matrix_scalar">div_matrix_scalar</a></li><li><a href="global.html#dot">dot</a></li><li><a href="global.html#dot_product">dot_product</a></li><li><a href="global.html#dot_product_unrolled">dot_product_unrolled</a></li><li><a href="global.html#draw_2d_function">draw_2d_function</a></li><li><a href="global.html#draw_3d_function">draw_3d_function</a></li><li><a href="global.html#draw_bounding_sphere">draw_bounding_sphere</a></li><li><a href="global.html#draw_decomposed_bounding_sphere">draw_decomposed_bounding_sphere</a></li><li><a href="global.html#draw_decomposed_obb">draw_decomposed_obb</a></li><li><a href="global.html#draw_euler_angle_intermediate_coordinate_frame">draw_euler_angle_intermediate_coordinate_frame</a></li><li><a href="global.html#draw_obb">draw_obb</a></li><li><a href="global.html#dual_quaternion_conj_sharp">dual_quaternion_conj_sharp</a></li><li><a href="global.html#dual_quaternion_conj_star">dual_quaternion_conj_star</a></li><li><a href="global.html#dual_quaternion_norm">dual_quaternion_norm</a></li><li><a href="global.html#exp_h1_to_H1_scalar_vector">exp_h1_to_H1_scalar_vector</a></li><li><a href="global.html#exp_h1_to_H1_wxyz">exp_h1_to_H1_wxyz</a></li><li><a href="global.html#exp_se2_to_SE2">exp_se2_to_SE2</a></li><li><a href="global.html#exp_se3_to_SE3">exp_se3_to_SE3</a></li><li><a href="global.html#exp_so2_and_v_to_SO2_and_t">exp_so2_and_v_to_SO2_and_t</a></li><li><a href="global.html#exp_so2_to_SO2">exp_so2_to_SO2</a></li><li><a href="global.html#exp_so3_and_v_to_SO3_and_t">exp_so3_and_v_to_SO3_and_t</a></li><li><a href="global.html#exp_so3_to_SO3">exp_so3_to_SO3</a></li><li><a href="global.html#factorial">factorial</a></li><li><a href="global.html#forward_kinematics_SE3">forward_kinematics_SE3</a></li><li><a href="global.html#forward_kinematics_SO3_and_position">forward_kinematics_SO3_and_position</a></li><li><a href="global.html#forward_kinematics_SO3_and_position_all">forward_kinematics_SO3_and_position_all</a></li><li><a href="global.html#frobenius_norm_matrix">frobenius_norm_matrix</a></li><li><a href="global.html#get_arclength_components">get_arclength_components</a></li><li><a href="global.html#get_bounding_sphere_offset">get_bounding_sphere_offset</a></li><li><a href="global.html#get_bounding_sphere_radius">get_bounding_sphere_radius</a></li><li><a href="global.html#get_curve_exp_0_points">get_curve_exp_0_points</a></li><li><a href="global.html#get_curve_exp_tx_points">get_curve_exp_tx_points</a></li><li><a href="global.html#get_curve_exp_x_points">get_curve_exp_x_points</a></li><li><a href="global.html#get_decomposed_bounding_sphere_offset">get_decomposed_bounding_sphere_offset</a></li><li><a href="global.html#get_decomposed_bounding_sphere_radius">get_decomposed_bounding_sphere_radius</a></li><li><a href="global.html#get_decomposition_obb_RPY">get_decomposition_obb_RPY</a></li><li><a href="global.html#get_decomposition_obb_half_extents">get_decomposition_obb_half_extents</a></li><li><a href="global.html#get_decomposition_obb_offset">get_decomposition_obb_offset</a></li><li><a href="global.html#get_obb_RPY">get_obb_RPY</a></li><li><a href="global.html#get_obb_half_extents">get_obb_half_extents</a></li><li><a href="global.html#get_obb_offset">get_obb_offset</a></li><li><a href="global.html#get_rotation_so3_matrix">get_rotation_so3_matrix</a></li><li><a href="global.html#get_rpy_SO3_matrix">get_rpy_SO3_matrix</a></li><li><a href="global.html#get_rpy_wxyz_quaternion">get_rpy_wxyz_quaternion</a></li><li><a href="global.html#get_surface_exp_0_points">get_surface_exp_0_points</a></li><li><a href="global.html#get_surface_exp_tx_points">get_surface_exp_tx_points</a></li><li><a href="global.html#get_surface_exp_x_points">get_surface_exp_x_points</a></li><li><a href="global.html#get_x_rotation_so3_matrix">get_x_rotation_so3_matrix</a></li><li><a href="global.html#get_xyz_rpy_SE3_matrix">get_xyz_rpy_SE3_matrix</a></li><li><a href="global.html#get_y_rotation_so3_matrix">get_y_rotation_so3_matrix</a></li><li><a href="global.html#get_z_rotation_so3_matrix">get_z_rotation_so3_matrix</a></li><li><a href="global.html#gradient_fd">gradient_fd</a></li><li><a href="global.html#identity_matrix">identity_matrix</a></li><li><a href="global.html#interpolate_poses_SO2_and_position">interpolate_poses_SO2_and_position</a></li><li><a href="global.html#interpolate_poses_SO3_and_position">interpolate_poses_SO3_and_position</a></li><li><a href="global.html#inverse_kinematics_SO3_and_position">inverse_kinematics_SO3_and_position</a></li><li><a href="global.html#inverse_pose_SO2_and_position">inverse_pose_SO2_and_position</a></li><li><a href="global.html#inverse_pose_SO3_and_position">inverse_pose_SO3_and_position</a></li><li><a href="global.html#ln_H1_to_h1_scalar_vector">ln_H1_to_h1_scalar_vector</a></li><li><a href="global.html#ln_H1_to_h1_wxyz">ln_H1_to_h1_wxyz</a></li><li><a href="global.html#ln_SE2_to_se2">ln_SE2_to_se2</a></li><li><a href="global.html#ln_SE3_to_se3">ln_SE3_to_se3</a></li><li><a href="global.html#ln_SO2_and_t_to_so2_and_v">ln_SO2_and_t_to_so2_and_v</a></li><li><a href="global.html#ln_SO2_to_so2">ln_SO2_to_so2</a></li><li><a href="global.html#ln_SO3_and_t_to_so3_and_v">ln_SO3_and_t_to_so3_and_v</a></li><li><a href="global.html#ln_SO3_to_so3">ln_SO3_to_so3</a></li><li><a href="global.html#map_pose_SO2_and_position">map_pose_SO2_and_position</a></li><li><a href="global.html#map_pose_SO3_and_position">map_pose_SO3_and_position</a></li><li><a href="global.html#matrix_inverse_3x3">matrix_inverse_3x3</a></li><li><a href="global.html#matrix_to_quaternion">matrix_to_quaternion</a></li><li><a href="global.html#minimize_GradientDescent">minimize_GradientDescent</a></li><li><a href="global.html#minimize_L_BFGS">minimize_L_BFGS</a></li><li><a href="global.html#minimize_Powell">minimize_Powell</a></li><li><a href="global.html#mul_complex_numbers">mul_complex_numbers</a></li><li><a href="global.html#mul_dual_quaternions">mul_dual_quaternions</a></li><li><a href="global.html#mul_matrix_matrix">mul_matrix_matrix</a></li><li><a href="global.html#mul_matrix_scalar">mul_matrix_scalar</a></li><li><a href="global.html#mul_scalar_vector_quaternions">mul_scalar_vector_quaternions</a></li><li><a href="global.html#mul_wxyz_quaternions">mul_wxyz_quaternions</a></li><li><a href="global.html#normalized_matrix">normalized_matrix</a></li><li><a href="global.html#optimization_bfgs">optimization_bfgs</a></li><li><a href="global.html#optimization_dummy">optimization_dummy</a></li><li><a href="global.html#optimization_gradient_descent">optimization_gradient_descent</a></li><li><a href="global.html#optimization_powell">optimization_powell</a></li><li><a href="global.html#optimization_solve">optimization_solve</a></li><li><a href="global.html#print_var_to_document">print_var_to_document</a></li><li><a href="global.html#proj">proj</a></li><li><a href="global.html#proj_pt_onto_line">proj_pt_onto_line</a></li><li><a href="global.html#proj_scalar">proj_scalar</a></li><li><a href="global.html#pt_dis_to_line">pt_dis_to_line</a></li><li><a href="global.html#quaternion_conj_scalar_vector">quaternion_conj_scalar_vector</a></li><li><a href="global.html#quaternion_conj_wxyz">quaternion_conj_wxyz</a></li><li><a href="global.html#robot_kinematic_opt">robot_kinematic_opt</a></li><li><a href="global.html#roll_list_into_column_vec_matrix">roll_list_into_column_vec_matrix</a></li><li><a href="global.html#roll_list_into_matrix">roll_list_into_matrix</a></li><li><a href="global.html#roll_list_into_row_vec_matrix">roll_list_into_row_vec_matrix</a></li><li><a href="global.html#sandwich_product_scalar_vector_quaternion_and_point">sandwich_product_scalar_vector_quaternion_and_point</a></li><li><a href="global.html#sandwich_product_wxyz_quaternion_and_point">sandwich_product_wxyz_quaternion_and_point</a></li><li><a href="global.html#scalar_to_so2_mat">scalar_to_so2_mat</a></li><li><a href="global.html#se2_mat_to_vec3">se2_mat_to_vec3</a></li><li><a href="global.html#se3_mat_to_vec6">se3_mat_to_vec6</a></li><li><a href="global.html#set_object_orientation_from_SO2_matrix">set_object_orientation_from_SO2_matrix</a></li><li><a href="global.html#set_object_orientation_from_SO3_matrix">set_object_orientation_from_SO3_matrix</a></li><li><a href="global.html#set_object_orientation_from_U1_complex_number">set_object_orientation_from_U1_complex_number</a></li><li><a href="global.html#set_object_orientation_from_scalar_vector_quaternion">set_object_orientation_from_scalar_vector_quaternion</a></li><li><a href="global.html#set_object_orientation_from_wxyz_quaternion">set_object_orientation_from_wxyz_quaternion</a></li><li><a href="global.html#set_object_pose_from_SE2_matrix">set_object_pose_from_SE2_matrix</a></li><li><a href="global.html#set_object_pose_from_SE3_matrix">set_object_pose_from_SE3_matrix</a></li><li><a href="global.html#set_object_pose_from_SO2_matrix_and_position">set_object_pose_from_SO2_matrix_and_position</a></li><li><a href="global.html#set_object_pose_from_SO3_matrix_and_position">set_object_pose_from_SO3_matrix_and_position</a></li><li><a href="global.html#set_object_pose_from_scalar_vector_quaternion_and_position">set_object_pose_from_scalar_vector_quaternion_and_position</a></li><li><a href="global.html#set_object_pose_from_wxyz_quaternion_and_position">set_object_pose_from_wxyz_quaternion_and_position</a></li><li><a href="global.html#set_object_position_2D">set_object_position_2D</a></li><li><a href="global.html#set_object_position_3D">set_object_position_3D</a></li><li><a href="global.html#set_robot_state">set_robot_state</a></li><li><a href="global.html#set_robot_state_from_SE3_fk_result">set_robot_state_from_SE3_fk_result</a></li><li><a href="global.html#set_robot_state_from_SO3_and_position_fk_result">set_robot_state_from_SO3_and_position_fk_result</a></li><li><a href="global.html#shuffleIndicesOf">shuffleIndicesOf</a></li><li><a href="global.html#so2_mat_to_scalar">so2_mat_to_scalar</a></li><li><a href="global.html#so3_and_v_to_vec6">so3_and_v_to_vec6</a></li><li><a href="global.html#so3_mat_to_vec3">so3_mat_to_vec3</a></li><li><a href="global.html#sub_matrix_matrix">sub_matrix_matrix</a></li><li><a href="global.html#transpose">transpose</a></li><li><a href="global.html#unroll_matrix_to_list">unroll_matrix_to_list</a></li><li><a href="global.html#vec3_to_se2_mat">vec3_to_se2_mat</a></li><li><a href="global.html#vec3_to_so3_mat">vec3_to_so3_mat</a></li><li><a href="global.html#vec6_to_se3_mat">vec6_to_se3_mat</a></li><li><a href="global.html#vec6_to_so3_and_v">vec6_to_so3_and_v</a></li><li><a href="global.html#vect_a_minus_b">vect_a_minus_b</a></li><li><a href="global.html#vect_max_abs_x_less_eps">vect_max_abs_x_less_eps</a></li><li><a href="global.html#vect_x_pluseq_ag">vect_x_pluseq_ag</a></li><li><a href="global.html#visualize_robot">visualize_robot</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Sun Sep 01 2024 17:05:37 GMT-0400 (Eastern Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

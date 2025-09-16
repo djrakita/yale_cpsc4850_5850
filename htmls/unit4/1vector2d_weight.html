@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale Geometric Algebra Workshop</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <script type="module">
+        import {ThreeEngine} from '../js/utils/utils_three.js'
+        import {get_default_lil_gui} from "../js/utils/utils_three.js";
+        import {TransformGizmoEngine} from "../js/utils/utils_transform_gizmo.js";
+        import {refresh_displays} from "../js/utils/utils_three.js";
+        import {k_vector_weight} from "../js/utils/utils_math.js";
+
+        let engine = ThreeEngine.new_default_2d();
+
+        let gui = get_default_lil_gui();
+        let settings = {
+            weight: 1,
+            orientation: '+'
+        };
+        let actions = {
+            reset: () => {
+                tge.set_pose_of_gizmo_SO2_matrix_and_position(0, undefined, [1, 1]);
+                refresh_displays(gui);
+            }
+        }
+        gui.add(settings, 'weight').disable();
+        gui.add(settings, 'orientation').disable();
+        gui.add(actions, 'reset');
+
+        let tge = new TransformGizmoEngine(engine);
+        tge.add_gizmo_SO2_matrix_and_position(engine, undefined, [1, 1], 0.3)
+
+        engine.animation_loop(() => {
+            engine.draw_debug_vector([0,0], tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1]);
+
+            let m = tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1];
+            let w = k_vector_weight(m, 3);
+
+            let color;
+            if (w >= 0) { settings.orientation = '+'; color = 0x0000ff; }
+            else { settings.orientation = '-'; color = 0xff7300; }
+            settings.weight = w;
+            refresh_displays(gui);
+
+            engine.draw_debug_vector([0,0], tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1], undefined, undefined, color);
+        });
+
+    </script>
+</body>
+</html>

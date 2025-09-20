@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>CPSC 487/587</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.3.0/math.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quaternion@1.5.1/quaternion.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric-1.2.6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import {ThreeEngine} from "../js/utils/utils_three.js";
+    import {TransformGizmoEngine} from "../js/utils/utils_transform_gizmo.js";
+    import {BSpline} from "../js/utils/utils_splines.js";
+    import {arclength_parameterize_spline_interpolate} from "../js/utils/utils_splines.js";
+    import {identity_matrix} from "../js/utils/utils_math.js";
+    import {get_default_lil_gui} from "../js/utils/utils_three.js";
+    import {unroll_matrix_to_list} from "../js/utils/utils_math.js";
+    import {get_arclength_components} from "../js/utils/utils_splines.js";
+    import {sub_matrix_matrix} from "../js/utils/utils_math.js";
+    import {normalized_matrix} from "../js/utils/utils_math.js";
+    import {cross_product} from "../js/utils/utils_math.js";
+    import {get_x_rotation_so3_matrix} from "../js/utils/utils_euler_angles.js";
+    import {mul_matrix_matrix} from "../js/utils/utils_math.js";
+    import {add_matrix_matrix} from "../js/utils/utils_math.js";
+    import {mul_matrix_scalar} from "../js/utils/utils_math.js";
+    import {determinant3x3} from "../js/utils/utils_math.js";
+    import {dot_product} from "../js/utils/utils_math.js";
+    import {set_object_pose_from_SO3_matrix_and_position} from "../js/utils/utils_transforms.js";
+    import {refresh_displays} from "../js/utils/utils_three.js";
+
+    let engine = ThreeEngine.new_default_3d(1.5,0.5,0.5);
+
+    let tge = new TransformGizmoEngine(engine);
+
+    let settings = {
+        t: 0,
+        is_playing: 0,
+        momentum:0.02,
+        playback_speed:1
+    };
+
+    let actions = {
+        play: () => {
+            settings.is_playing = true;
+        },
+        stop: () => {
+            settings.is_playing = false;
+        }
+    }
+
+    let spline = new BSpline(
+        [
+            [[1], [0], [0]],
+            [[0.75], [0.25], [0]],
+            [[0.25], [0.75], [0]],
+            [[0], [1], [0]],
+            [[-0.25], [0.75], [0]],
+            [[-0.75], [0.25], [0]],
+            [[-1], [0], [0]],
+            [[-0.75], [-0.25], [0]],
+            [[-0.25], [-0.75], [0]],
+            [[0], [-1], [0]],
+            [[0.25], [-0.75], [0]],
+            [[0.75], [-0.25], [0]],
+
+            [[1], [0], [0]],
+            [[0.75], [0.25], [0]],
+            [[0.25], [0.75], [0]],
+            [[0], [1], [0]]
+        ],
+        4,
+        true
+    );
+
+    let gui = get_default_lil_gui();
+    gui.add(settings, 't', 0, spline.control_points.length-1-0.0001).name("u");
+    gui.add(actions, 'play').name('Play');
+    gui.add(actions, 'stop').name('Stop');
+    gui.add(settings, 'playback_speed', 0.0, 4.0).name('Playback speed');
+
+    let num_distinct_control_points = spline.control_points.length-4;
+
+    for(let i = 0; i < spline.control_points.length; i++) {
+        let idx = tge.add_gizmo_SO3_matrix_and_position(engine, identity_matrix(3), spline.control_points[i], 0.2);
+        let tc = tge.transform_controls[idx];
+
+        tc.addEventListener('change', () => {
+            let idx = i % num_distinct_control_points;
+            // let angle = settings['angle_'+idx.toString()];
+            let [rotation, position] = tge.get_gizmo_pose_as_SO3_matrix_and_position(idx);
+            // let p = unroll_matrix_to_list(position);
+            spline.update_control_point(i, position);
+        });
+    }
+
+    function get_SO3_frame_from_forward(forward, prev_y) {
+        let x = forward;
+        let y = cross_product(x, [[0], [0], [1]]);
+        y = normalized_matrix(y);
+
+        let d = dot_product(y, prev_y);
+        if(d < 0) { y = mul_matrix_scalar(y, -1); }
+
+        let z = cross_product(x, y);
+        z = normalized_matrix(z);
+        x = unroll_matrix_to_list(x);
+        y = unroll_matrix_to_list(y);
+        z = unroll_matrix_to_list(z);
+
+        let frame = [
+            [x[0], y[0], z[0]],
+            [x[1], y[1], z[1]],
+            [x[2], y[2], z[2]]
+        ];
+
+        return frame;
+    }
+    function get_position_from_frame(frame, p) {
+        let z = [ [frame[0][2]], [frame[1][2]], [frame[2][2]] ];
+        let d = dot_product(z, [[0], [0], [1]]);
+        if(d < 0) { z = mul_matrix_scalar(z, -1); }
+        let scaled_z = mul_matrix_scalar(z, 0.026);
+        return add_matrix_matrix(p, scaled_z);
+    }
+
+    function get_wraparound_t(t) {
+        if(t < 0) {
+            return (spline.control_points.length-1) + t;
+        } else {
+            return t;
+        }
+    }
+
+    engine.add_cube_as_mesh_object(0.06, 0x663399);
+    engine.add_cube_as_mesh_object(0.06, 0x663399);
+    engine.add_cube_as_mesh_object(0.06, 0x663399);
+    engine.add_cube_as_mesh_object(0.06, 0x663399);
+    engine.add_cube_as_mesh_object(0.06, 0x663399);
+
+    let prev_yy = [[0], [1], [0]];
+    let dd = 0.0;
+
+    engine.animation_loop(function() {
+        if(settings.is_playing) {
+            if(dd < 0) {
+                settings.momentum += (0.1*Math.pow(settings.momentum, 0.5)*settings.playback_speed)*(-dd);
+            } else {
+                settings.momentum += (0.03*Math.pow(settings.momentum, 0.5)*settings.playback_speed)*(-dd);
+            }
+            settings.momentum -= 0.0065;
+            settings.momentum = Math.max(settings.momentum, 0.1);
+            settings.momentum = Math.min(settings.momentum, 1.9);
+
+            settings.t += settings.playback_speed * settings.momentum * 0.05;
+
+            if(settings.t > (spline.control_points.length-1) ) {
+                settings.t = 0;
+            }
+
+            refresh_displays(gui);
+        }
+
+        let components = get_arclength_components(spline, spline.control_points.length-1);
+
+        let points = [];
+        let ts = [];
+        for(let i = 0; i <= 200; i++) {
+            let t = (i / 200) * (spline.control_points.length-1);
+            t = Math.min( t, (spline.control_points.length-1)-0.0001 );
+            ts.push(t);
+            points.push(arclength_parameterize_spline_interpolate(t, spline, spline.control_points.length-1, components));
+            // angles.push(arclength_parameterize_spline_interpolate(t, spline2, spline2.control_points.length-1, components2));
+        }
+
+        let normalized_tangents = [];
+        for(let i = 0; i < ts.length; i++) {
+            let p1 = points[i];
+            let p2 = spline.interpolate(ts[i] + 0.0000001);
+            let diff = sub_matrix_matrix(p2, p1);
+            let normalized = normalized_matrix(diff);
+            normalized_tangents.push(normalized);
+        }
+
+        let frames = [];
+        let prev_y = [[0], [1], [0]];
+        for(let i = 0; i < normalized_tangents.length; i++) {
+            let frame = get_SO3_frame_from_forward(normalized_tangents[i], prev_y);
+            prev_y = [ [frame[0][1]], [frame[1][1]], [frame[2][1]]  ];
+
+            frames.push(frame);
+        }
+
+        for(let i = 0; i < points.length-1; i++) {
+            let frame = frames[i];
+            let y = [ [frame[0][1]], [frame[1][1]], [frame[2][1]] ];
+            let scaled_y = mul_matrix_scalar(y, 0.02);
+            let scaled_y_n = mul_matrix_scalar(y, -0.02);
+
+            let frame2 = frames[i+1];
+            let y2 = [ [frame2[0][1]], [frame2[1][1]], [frame2[2][1]] ];
+            let scaled_y2 = mul_matrix_scalar(y2, 0.02);
+            let scaled_y_n2 = mul_matrix_scalar(y2, -0.02);
+
+            engine.draw_debug_line(points[i], points[i+1], false, 0.005, 0x222222);
+            engine.draw_debug_line(points[i], add_matrix_matrix(points[i], scaled_y), false, 0.002, 0x666666);
+            engine.draw_debug_line(points[i], add_matrix_matrix(points[i], scaled_y_n), false, 0.002, 0x666666);
+
+            engine.draw_debug_line(add_matrix_matrix(points[i], scaled_y), add_matrix_matrix(points[i+1], scaled_y2), false, 0.002, 0x777777);
+            engine.draw_debug_line(add_matrix_matrix(points[i], scaled_y_n), add_matrix_matrix(points[i+1], scaled_y_n2), false, 0.002, 0x777777);
+        }
+
+        for(let i = 0; i < points.length; i+=3) {
+            let p = unroll_matrix_to_list(points[i]);
+            if (p[2] > 0) {
+                engine.draw_debug_line(p, [p[0], p[1], 0], false, 0.01, 0x9999bb);
+            }
+        }
+
+        /////
+
+        let t = settings.t;
+        let p1 = arclength_parameterize_spline_interpolate(t, spline, spline.control_points.length-1, components);
+        let p2 = arclength_parameterize_spline_interpolate(t + 0.000001, spline, spline.control_points.length-1, components);
+        let diff = sub_matrix_matrix(p2, p1);
+        let tangent = normalized_matrix(diff);
+        dd = dot_product(tangent, [[0], [0], [1]]);
+        let frame = get_SO3_frame_from_forward(tangent, prev_yy);
+        prev_yy = [ [frame[0][1]], [frame[1][1]], [frame[2][1]]  ];
+
+        set_object_pose_from_SO3_matrix_and_position(engine, 0, frame, get_position_from_frame(frame, p1));
+
+        t = get_wraparound_t(t - 0.21);
+        p1 = arclength_parameterize_spline_interpolate(t, spline, spline.control_points.length-1, components);
+        p2 = arclength_parameterize_spline_interpolate(t + 0.000001, spline, spline.control_points.length-1, components);
+        diff = sub_matrix_matrix(p2, p1);
+        tangent = normalized_matrix(diff);
+        frame = get_SO3_frame_from_forward(tangent, prev_yy);
+        // prev_yy = [ [frame[0][1]], [frame[1][1]], [frame[2][1]]  ];
+
+        set_object_pose_from_SO3_matrix_and_position(engine, 1, frame, get_position_from_frame(frame, p1));
+
+        t = get_wraparound_t(t - 0.21);
+        p1 = arclength_parameterize_spline_interpolate(t, spline, spline.control_points.length-1, components);
+        p2 = arclength_parameterize_spline_interpolate(t + 0.000001, spline, spline.control_points.length-1, components);
+        diff = sub_matrix_matrix(p2, p1);
+        tangent = normalized_matrix(diff);
+        frame = get_SO3_frame_from_forward(tangent, prev_yy);
+        // prev_yy = [ [frame[0][1]], [frame[1][1]], [frame[2][1]]  ];
+
+        set_object_pose_from_SO3_matrix_and_position(engine, 2, frame, get_position_from_frame(frame, p1));
+
+        t = get_wraparound_t(t - 0.21);
+        p1 = arclength_parameterize_spline_interpolate(t, spline, spline.control_points.length-1, components);
+        p2 = arclength_parameterize_spline_interpolate(t + 0.000001, spline, spline.control_points.length-1, components);
+        diff = sub_matrix_matrix(p2, p1);
+        tangent = normalized_matrix(diff);
+        frame = get_SO3_frame_from_forward(tangent, prev_yy);
+        // prev_yy = [ [frame[0][1]], [frame[1][1]], [frame[2][1]]  ];
+
+        set_object_pose_from_SO3_matrix_and_position(engine, 3, frame, get_position_from_frame(frame, p1));
+
+        t = get_wraparound_t(t - 0.21);
+        p1 = arclength_parameterize_spline_interpolate(t, spline, spline.control_points.length-1, components);
+        p2 = arclength_parameterize_spline_interpolate(t + 0.000001, spline, spline.control_points.length-1, components);
+        diff = sub_matrix_matrix(p2, p1);
+        tangent = normalized_matrix(diff);
+        frame = get_SO3_frame_from_forward(tangent, prev_yy);
+        // prev_yy = [ [frame[0][1]], [frame[1][1]], [frame[2][1]]  ];
+
+        set_object_pose_from_SO3_matrix_and_position(engine, 4, frame, get_position_from_frame(frame, p1));
+
+    });
+
+</script>
+</body>
+</html>

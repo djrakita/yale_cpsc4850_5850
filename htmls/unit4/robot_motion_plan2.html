@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Yale Geometric Algebra Workshop</title>
+    <title>Yale CPSC 4850/5850</title>
     <script src="../../js/setup/setup_mathjax.js"></script>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
@@ -83,7 +83,7 @@
         };
 
         let folder4 = gui.addFolder('Controls')
-        folder4.add(settings, 't', 0, 1)
+        folder4.add(settings, 't', 0, 1).name('u');
         folder4.add(actions, 'play').name('play/stop');
 
         engine.animation_loop(() => {

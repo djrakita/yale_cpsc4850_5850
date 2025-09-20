@@ -589,7 +589,7 @@ export class PolynomialSplineSegmentVisualizer {
             }
         }
 
-        gui.add(this.settings, 't', 0, 1);
+        gui.add(this.settings, 't', 0, 1).name('u');
         gui.add(this.settings, 'gizmos_visible').name('Gizmos Visible');
         gui.add(this.settings, 'draw_second_grid').name('Draw Grid');
         gui.add(this.settings, 'draw_sum_vecs').name('Draw Sum Vecs');
@@ -808,7 +808,7 @@ export class PolynomialSplineVisualizer {
             }
         }
 
-        gui.add(this.settings, 't', 0, helper.spline.max_interpolation_value()-0.00001);
+        gui.add(this.settings, 't', 0, helper.spline.max_interpolation_value()-0.00001).name('u');
         gui.add(this.settings, 'playback_speed', 0.001, 5).name('Playback speed');
         gui.add(this.settings, 'gizmos_visible').name('Gizmos Visible');
         // gui.add(this.settings, 'draw_second_grid').name('Draw Grid');
@@ -1262,7 +1262,7 @@ export class BSplineVisualizer {
             }
         }
 
-        gui.add(this.settings, 't', 0, this.helper.spline.n -1);
+        gui.add(this.settings, 't', 0, this.helper.spline.n -1).name('u');;
         let a = gui.add(this.settings, 'd', 1, 10, 1).name('d');
         if(freeze_d) { a.disable(); }
         gui.add(this.settings, 'gizmos_visible').name('Gizmos Visible');

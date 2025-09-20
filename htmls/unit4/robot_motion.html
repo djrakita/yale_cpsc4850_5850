@@ -102,7 +102,7 @@
         };
 
         let folder4 = gui.addFolder('Controls')
-        folder4.add(settings, 't', 0, 1)
+        folder4.add(settings, 't', 0, 1).name('u');
         folder4.add(actions, 'play').name('play/stop');
 
         engine.animation_loop(() => {

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale CPSC 4850/5850</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <script type="module">
+        import {ThreeEngine} from '../js/utils/utils_three.js'
+        import {XArm7Robot} from "../js/utils/utils_robot.js";
+        import {set_robot_state} from "../js/utils/utils_kinematics_obfuscated.js";
+        import {get_default_lil_gui} from "../js/utils/utils_three.js";
+        import {refresh_displays} from "../js/utils/utils_three.js";
+
+        let engine = ThreeEngine.new_default_3d();
+
+        let robot = new XArm7Robot();
+        robot.spawn_robot(engine);
+
+        let robot2 = new XArm7Robot();
+        robot2.spawn_robot(engine);
+
+        let robot3 = new XArm7Robot();
+        robot3.spawn_robot(engine);
+
+        let robot4 = new XArm7Robot();
+        robot4.spawn_robot(engine);
+
+        let settings = {
+            dof1_start: 0,
+            dof2_start: 0,
+            dof3_start: 0,
+            dof4_start: 0,
+            dof5_start: 1.57,
+            dof6_start: 0,
+            dof7_start: 0,
+            dof8_start: 0,
+            dof1_end: 0.7,
+            dof2_end: 0,
+            dof3_end: 0,
+            dof4_end: 0,
+            dof5_end: 1.57,
+            dof6_end: 0,
+            dof7_end: 0,
+            dof8_end: 0,
+            dof1: 0,
+            dof2: 0,
+            dof3: 0,
+            dof4: 0,
+            dof5: 0,
+            dof6: 0,
+            dof7: 0,
+            dof8: 0,
+            t:0,
+            is_playing:false
+        }
+
+        let gui = get_default_lil_gui();
+
+        // let folder3 = gui.addFolder('State');
+        // folder3.add(settings, 'dof1').disable();
+        // folder3.add(settings, 'dof2').disable();
+        // folder3.add(settings, 'dof3').disable();
+        // folder3.add(settings, 'dof4').disable();
+        // folder3.add(settings, 'dof5').disable();
+        // folder3.add(settings, 'dof6').disable();
+        // folder3.add(settings, 'dof7').disable();
+        // folder3.add(settings, 'dof8').disable();
+
+        let actions = {
+            play: function() {
+                settings.is_playing = !settings.is_playing;
+            }
+        };
+
+        // let folder4 = gui.addFolder('Controls')
+        gui.add(settings, 't', 0, 1)
+        gui.add(actions, 'play').name('play/stop');
+
+        engine.animation_loop(() => {
+            let w = [0.35, 0.2, -0.1, 0.04, 2.5, -0.06, 1.0, 0.02, 0.1];
+
+            engine.draw_debug_sphere([0.45, 0, 0.75], 0.13, 0xff5522, 1.0)
+
+            set_robot_state(engine, robot2, [settings.dof1_start, settings.dof2_start, settings.dof3_start, settings.dof4_start, settings.dof5_start, settings.dof6_start, settings.dof7_start, settings.dof8_start])
+            set_robot_state(engine, robot3, [settings.dof1_end, settings.dof2_end, settings.dof3_end, settings.dof4_end, settings.dof5_end, settings.dof6_end, settings.dof7_end, settings.dof8_end])
+
+            let s1, s2, s3, s4, s5, s6, s7, s8;
+            let s1b, s2b, s3b, s4b, s5b, s6b, s7b, s8b;
+            if(settings.t <= 0.5) {
+                let tt = settings.t * 2.0;
+                s1 = (1.0 - tt) * settings.dof1_start + tt * w[0];
+                s2 = (1.0 - tt) * settings.dof2_start + tt * w[1];
+                s3 = (1.0 - tt) * settings.dof3_start + tt * w[2];
+                s4 = (1.0 - tt) * settings.dof4_start + tt * w[3];
+                s5 = (1.0 - tt) * settings.dof5_start + tt * w[4];
+                s6 = (1.0 - tt) * settings.dof6_start + tt * w[5];
+                s7 = (1.0 - tt) * settings.dof7_start + tt * w[6];
+                s8 = (1.0 - tt) * settings.dof8_start + tt * w[7];
+            } else {
+                let tt = (settings.t - 0.5) * 2.0;
+                s1 = (1.0 - tt) * w[0] + tt * settings.dof1_end;
+                s2 = (1.0 - tt) * w[1] + tt * settings.dof2_end;
+                s3 = (1.0 - tt) * w[2] + tt * settings.dof3_end;
+                s4 = (1.0 - tt) * w[3] + tt * settings.dof4_end;
+                s5 = (1.0 - tt) * w[4] + tt * settings.dof5_end;
+                s6 = (1.0 - tt) * w[5] + tt * settings.dof6_end;
+                s7 = (1.0 - tt) * w[6] + tt * settings.dof7_end;
+                s8 = (1.0 - tt) * w[7] + tt * settings.dof8_end;
+            }
+            if(settings.t <= 0.25) {
+                let tt = settings.t * 4.0;
+                s1b = (1.0 - tt) * settings.dof1_start + tt * w[0];
+                s2b = (1.0 - tt) * settings.dof2_start + tt * w[1];
+                s3b = (1.0 - tt) * settings.dof3_start + tt * w[2];
+                s4b = (1.0 - tt) * settings.dof4_start + tt * w[3];
+                s5b = (1.0 - tt) * settings.dof5_start + tt * w[4];
+                s6b = (1.0 - tt) * settings.dof6_start + tt * w[5];
+                s7b = (1.0 - tt) * settings.dof7_start + tt * w[6];
+                s8b = (1.0 - tt) * settings.dof8_start + tt * w[7];
+            } else if(settings.t <= 0.5) {
+                let tt = (settings.t - 0.25) * 4.0;
+                s1b = (1.0 - tt) * w[0] + tt * settings.dof1_end;
+                s2b = (1.0 - tt) * w[1] + tt * settings.dof2_end;
+                s3b = (1.0 - tt) * w[2] + tt * settings.dof3_end;
+                s4b = (1.0 - tt) * w[3] + tt * settings.dof4_end;
+                s5b = (1.0 - tt) * w[4] + tt * settings.dof5_end;
+                s6b = (1.0 - tt) * w[5] + tt * settings.dof6_end;
+                s7b = (1.0 - tt) * w[6] + tt * settings.dof7_end;
+                s8b = (1.0 - tt) * w[7] + tt * settings.dof8_end;
+            } else {
+                s1b = settings.dof1_end;
+                s2b = settings.dof2_end;
+                s3b = settings.dof3_end;
+                s4b = settings.dof4_end;
+                s5b = settings.dof5_end;
+                s6b = settings.dof6_end;
+                s7b = settings.dof7_end;
+                s8b = settings.dof8_end;
+            }
+
+            settings.dof1 = s1;
+            settings.dof2 = s2;
+            settings.dof3 = s3;
+            settings.dof4 = s4;
+            settings.dof5 = s5;
+            settings.dof6 = s6;
+            settings.dof7 = s7;
+            settings.dof8 = s8;
+
+            set_robot_state(engine, robot, [s1,s2,s3,s4,s5,s6,s7,s8])
+            set_robot_state(engine, robot4, [s1b,s2b,s3b,s4b,s5b,s6b,s7b,s8b])
+
+            if(settings.is_playing) {
+                settings.t += 0.005;
+                if(settings.t >= 1.0) {
+                    settings.t = 0.0;
+                }
+            }
+
+            refresh_displays(gui);
+        });
+
+    </script>
+</body>
+</html>

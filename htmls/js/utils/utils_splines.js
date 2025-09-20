@@ -829,8 +829,8 @@ export class PolynomialSplineVisualizer {
             gui.add(this.settings, 'distance_ratio').name('Target distance').disable();
             gui.add(this.settings, 'lower_bound_dis').name('Lower bound dis').disable();
             gui.add(this.settings, 'upper_bound_dis').name('Upper bound dis').disable();
-            gui.add(this.settings, 'lower_bound_t').name('Lower bound t').disable();
-            gui.add(this.settings, 'upper_bound_t').name('Upper bound t').disable();
+            gui.add(this.settings, 'lower_bound_t').name('Lower bound u').disable();
+            gui.add(this.settings, 'upper_bound_t').name('Upper bound u').disable();
             gui.add(this.settings, 'r').name('Ratio between bounds').disable();
             gui.add(this.settings, 'target_t').name('Interpolated t').disable();
         }

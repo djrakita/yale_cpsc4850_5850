@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale CPSC 4850/5850</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <script type="module">
+        import {ThreeEngine} from '../js/utils/utils_three.js'
+        import {CircleWorldFeasibilityChecker} from "../js/utils/utils_continuous_planning.js";
+        import {get_default_lil_gui} from "../js/utils/utils_three.js";
+        import {TransformGizmoEngine} from "../js/utils/utils_transform_gizmo.js";
+        import {refresh_displays} from "../js/utils/utils_three.js";
+
+        let engine = ThreeEngine.new_default_2d();
+
+        let p = new CircleWorldFeasibilityChecker();
+
+        let settings = {
+            is_feasible: 'true'
+        }
+        let gui = get_default_lil_gui();
+        gui.add(settings, 'is_feasible').disable();
+
+        let tge = new TransformGizmoEngine(engine);
+        tge.add_gizmo_SO2_matrix_and_position(engine, undefined, undefined, 0.2);
+
+        engine.animation_loop(() => {
+            p.draw(engine);
+
+            let position = tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1];
+
+            let feasible = p.is_feasible(position);
+            if(feasible) { settings.is_feasible='true' }
+            else{settings.is_feasible='false' }
+
+            refresh_displays(gui);
+        });
+
+    </script>
+</body>
+</html>

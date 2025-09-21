@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale CPSC 4850/5850</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <script type="module">
+        import {ThreeEngine} from '../js/utils/utils_three.js'
+        import {CircleWorldFeasibilityChecker} from "../js/utils/utils_continuous_planning.js";
+        import {get_default_lil_gui} from "../js/utils/utils_three.js";
+        import {TransformGizmoEngine} from "../js/utils/utils_transform_gizmo.js";
+        import {refresh_displays} from "../js/utils/utils_three.js";
+        import {frobenius_norm_matrix, sub_matrix_matrix} from "../js/utils/utils_math.js";
+        import {mul_matrix_scalar} from "../js/utils/utils_math.js";
+        import {add_matrix_matrix} from "../js/utils/utils_math.js";
+
+        let engine = ThreeEngine.new_default_2d();
+
+        let p = new CircleWorldFeasibilityChecker();
+
+        let settings = {
+            is_feasible: 'true',
+            step_size: 0.1
+        }
+        let gui = get_default_lil_gui();
+        gui.add(settings, 'is_feasible').disable().name('is feasible edge');
+        gui.add(settings, 'step_size', 0.01, 2.0);
+
+        let tge = new TransformGizmoEngine(engine);
+        tge.add_gizmo_SO3_matrix_and_position(engine, undefined, [[3],[0],[2.0]], 0.2);
+        tge.add_gizmo_SO3_matrix_and_position(engine, undefined, [[-3],[0], [2.0]], 0.2);
+
+        engine.animation_loop(() => {
+            p.draw(engine);
+
+            let pos1 = tge.get_gizmo_pose_as_SO3_matrix_and_position(0)[1];
+            let pos2 = tge.get_gizmo_pose_as_SO3_matrix_and_position(1)[1];
+            engine.draw_debug_line(pos1, pos2, false, 0.02, 0x2255ff);
+
+            let dis = frobenius_norm_matrix(sub_matrix_matrix(pos1, pos2));
+            let num_steps = Math.floor(dis / settings.step_size);
+            let total_is_feasible = true;
+            for(let i = 0; i < num_steps; i++) {
+                let rr = (settings.step_size * i) / dis;
+                let interp = add_matrix_matrix(mul_matrix_scalar(pos1, 1.0 - rr), mul_matrix_scalar(pos2, rr));
+                interp[2][0] += 1.0;
+                let interp2D = [interp[0][0], interp[1][0]];
+                let start2D = [pos1[0][0], pos1[1][0]];
+                let end2D = [pos2[0][0], pos2[1][0]];
+                let is_feasible = p.is_feasible(interp2D);
+                let cc;
+                if(is_feasible) { cc = 0x00ff55 } else { cc = 0xff5500; total_is_feasible=false; }
+                engine.draw_debug_sphere(interp, 0.02, cc);
+
+                if(!p.is_feasible(start2D)) { total_is_feasible = false; }
+                if(!p.is_feasible(end2D)) { total_is_feasible = false; }
+            }
+
+            // let feasible = p.is_feasible(position);
+            // if(feasible) { settings.is_feasible='true' }
+            // else{settings.is_feasible='false' }
+
+            settings.is_feasible = total_is_feasible;
+
+            refresh_displays(gui);
+        });
+
+    </script>
+</body>
+</html>

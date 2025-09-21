@@ -832,7 +832,7 @@ export class PolynomialSplineVisualizer {
             gui.add(this.settings, 'lower_bound_t').name('Lower bound u').disable();
             gui.add(this.settings, 'upper_bound_t').name('Upper bound u').disable();
             gui.add(this.settings, 'r').name('Ratio between bounds').disable();
-            gui.add(this.settings, 'target_t').name('Interpolated t').disable();
+            gui.add(this.settings, 'target_t').name('Interpolated u').disable();
         }
         let a = gui.add(this.settings, 'display_sphere').name('Show Sphere');
         if(freeze_display_sphere) { a.disable(); }

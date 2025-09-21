@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale CPSC 4850/5850</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <script type="module">
+        import {ThreeEngine} from '../js/utils/utils_three.js'
+        import {CircleWorldFeasibilityChecker} from "../js/utils/utils_continuous_planning.js";
+        import {get_default_lil_gui} from "../js/utils/utils_three.js";
+        import {refresh_displays} from "../js/utils/utils_three.js";
+        import {frobenius_norm_matrix, sub_matrix_matrix} from "../js/utils/utils_math.js";
+        import {is_edge_feasible} from "../js/utils/utils_continuous_planning.js";
+
+        let engine = ThreeEngine.new_default_2d();
+
+        let p = new CircleWorldFeasibilityChecker();
+
+        let max_num_steps = 500;
+
+        let actions = {
+            compute_all_steps: function() {
+                states = [];
+                all_steps = [];
+                let r = settings.radius;
+
+                for(let i = 0; i < max_num_steps; i++) {
+                    let rx = p.x_min + (p.x_max - p.x_min) * Math.random();
+                    let ry = p.y_min + (p.y_max - p.y_min) * Math.random();
+                    let pt = [rx, ry];
+                    let pt3D = [rx, ry, 6.0];
+                    let is_feasible = p.is_feasible(pt);
+
+                    if(is_feasible) {
+                        states.push(pt);
+
+                        let new_edges = [];
+
+                        for(let j = 0; j < states.length; j++) {
+                            let d = frobenius_norm_matrix(sub_matrix_matrix(pt, states[j]));
+                            if(d < r) {
+                                let ief = is_edge_feasible(pt, states[j], p);
+                                if(ief) {
+                                    new_edges.push( [pt, states[j]] );
+                                }
+                            }
+                        }
+
+                        all_steps.push( [pt3D, new_edges, true] );
+                    } else {
+                        all_steps.push( [pt3D, [], false] );
+                    }
+                }
+            },
+            increment_step: function() {
+                settings.step+=1;
+                if(settings.step >= max_num_steps) {
+                    settings.step=0;
+                }
+                refresh_displays(gui);
+            },
+            decrement_step: function() {
+                settings.step-=1;
+                if(settings.step < 0) {
+                    settings.step=max_num_steps;
+                }
+                refresh_displays(gui);
+            },
+            toggle_play: function() {
+                settings.is_playing = !settings.is_playing;
+            },
+            stop: function() {
+                settings.is_playing = false;
+            }
+        }
+
+        let settings = {
+            radius: 0.5,
+            step: 0,
+            show_radius_sphere: true,
+            is_playing: false
+        }
+        let gui = get_default_lil_gui();
+        gui.add(settings, 'radius', 0.5, 2.0).name('neighborhood radius').onChange(actions.compute_all_steps).onChange(stop);
+        gui.add(settings, 'show_radius_sphere');
+        gui.add(settings, 'step', 0, max_num_steps, 1).onChange(actions.stop);
+        gui.add(actions, 'increment_step').onChange(actions.stop);
+        gui.add(actions, 'decrement_step').onChange(actions.stop);
+        gui.add(actions, 'toggle_play').name('play/stop');
+
+        let states = [];
+        let all_steps = [];
+
+        actions.compute_all_steps();
+
+        engine.animation_loop(() => {
+            p.draw(engine);
+
+            for(let i = 0; i < settings.step; i++) {
+                let curr_step = all_steps[i];
+                if(!curr_step[2]) {
+                    engine.draw_debug_sphere(curr_step[0], 0.05, 0xff3333, 1.0);
+                } else {
+                    if(settings.step-1 === i) {
+                        engine.draw_debug_sphere(curr_step[0], 0.06, 0xeeff00, 1.0);
+                        if(settings.show_radius_sphere) {
+                            engine.draw_debug_sphere(curr_step[0], settings.radius, 0x005555, 0.2);
+                        }
+                    } else {
+                        engine.draw_debug_sphere(curr_step[0], 0.05, 0x0066ff, 1.0);
+                    }
+                    for(let j = 0; j < curr_step[1].length; j++) {
+                        let edge = curr_step[1][j];
+                        engine.draw_debug_line(edge[0], edge[1], false, undefined, 0x111111);
+                    }
+                }
+            }
+
+            if(settings.is_playing) {
+                if(engine.frame_idx % 10 === 0) {
+                    settings.step += 1;
+                    if(settings.step >= max_num_steps) {
+                        settings.step = 0;
+                    }
+                }
+            }
+
+            engine.draw_debug_sphere([-8.0, 4.0], settings.radius, 0x005555, 0.1);
+            refresh_displays(gui);
+        });
+
+    </script>
+</body>
+</html>

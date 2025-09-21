@@ -1,5 +1,24 @@
-import {frobenius_norm_matrix, sub_matrix_matrix, unroll_matrix_to_list} from "./utils_math.js";
+import {
+    add_matrix_matrix,
+    frobenius_norm_matrix,
+    mul_matrix_scalar,
+    sub_matrix_matrix,
+    unroll_matrix_to_list
+} from "./utils_math.js";
 
+export function is_edge_feasible(pos1, pos2, feasibility_checker, step_size=0.15) {
+    let dis = frobenius_norm_matrix(sub_matrix_matrix(pos1, pos2));
+    let num_steps = Math.floor(dis / step_size);
+    if(!feasibility_checker.is_feasible(pos1)) { return false; }
+    if(!feasibility_checker.is_feasible(pos2)) { return false; }
+    for(let i = 0; i < num_steps; i++) {
+        let rr = (step_size * i) / dis;
+        let interp = add_matrix_matrix(mul_matrix_scalar(pos1, 1.0 - rr), mul_matrix_scalar(pos2, rr));
+        let is_feasible = feasibility_checker.is_feasible(interp);
+        if(!is_feasible) { return false; }
+    }
+    return true;
+}
 
 export class BaseFeasibilityChecker {
     constructor() {
@@ -67,7 +86,7 @@ export class CircleWorldFeasibilityChecker extends SimpleBoundsFeasibilityChecke
         super.draw(three_engine);
 
         for(let i = 0; i < this.cs.length; i++) {
-            three_engine.draw_debug_sphere(this.cs[i], this.rs[i], 0x333333, 0.8, 20);
+            three_engine.draw_debug_sphere(this.cs[i], this.rs[i], 0x333333, 1.0, 20);
         }
     }
 }

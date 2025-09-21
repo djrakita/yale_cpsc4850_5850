@@ -94,12 +94,13 @@
             is_playing: false
         }
         let gui = get_default_lil_gui();
-        gui.add(settings, 'radius', 0.5, 2.0).name('neighborhood radius').onChange(actions.compute_all_steps).onChange(stop);
+        gui.add(settings, 'radius', 0.5, 2.0).name('neighborhood radius').onFinishChange(actions.compute_all_steps);
         gui.add(settings, 'show_radius_sphere');
         gui.add(settings, 'step', 0, max_num_steps, 1).onChange(actions.stop);
         gui.add(actions, 'increment_step').onChange(actions.stop);
         gui.add(actions, 'decrement_step').onChange(actions.stop);
         gui.add(actions, 'toggle_play').name('play/stop');
+        gui.add(actions, 'compute_all_steps').name('recompute');
 
         let states = [];
         let all_steps = [];

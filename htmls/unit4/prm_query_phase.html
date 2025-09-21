@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale CPSC 4850/5850</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import {ThreeEngine} from '../js/utils/utils_three.js'
+    import {CircleWorldFeasibilityChecker} from "../js/utils/utils_continuous_planning.js";
+    import {get_default_lil_gui} from "../js/utils/utils_three.js";
+    import {refresh_displays} from "../js/utils/utils_three.js";
+    import {frobenius_norm_matrix, sub_matrix_matrix} from "../js/utils/utils_math.js";
+    import {is_edge_feasible} from "../js/utils/utils_continuous_planning.js";
+    import {TransformGizmoEngine} from "../js/utils/utils_transform_gizmo.js";
+    import {unroll_matrix_to_list} from "../js/utils/utils_math.js";
+
+    let engine = ThreeEngine.new_default_2d();
+
+    let p = new CircleWorldFeasibilityChecker();
+
+    let max_num_steps = 500;
+
+    // A* Algorithm Implementation
+    function astar(start, goal, graph, radius) {
+        if (!graph || graph.length === 0) return [];
+
+        // Find closest nodes to start and goal
+        let startNode = findClosestNode(start, graph);
+        let goalNode = findClosestNode(goal, graph);
+
+        if (!startNode || !goalNode) return [];
+
+        // A* implementation
+        let openSet = [startNode];
+        let closedSet = new Set();
+        let cameFrom = new Map();
+        let gScore = new Map();
+        let fScore = new Map();
+
+        // Initialize scores
+        graph.forEach(node => {
+            gScore.set(node, Infinity);
+            fScore.set(node, Infinity);
+        });
+
+        gScore.set(startNode, 0);
+        fScore.set(startNode, heuristic(startNode, goalNode));
+
+        while (openSet.length > 0) {
+            // Find node with lowest fScore
+            let current = openSet.reduce((min, node) =>
+                fScore.get(node) < fScore.get(min) ? node : min
+            );
+
+            if (current === goalNode) {
+                return reconstructPath(cameFrom, current);
+            }
+
+            openSet = openSet.filter(node => node !== current);
+            closedSet.add(current);
+
+            // Check neighbors
+            let neighbors = getNeighbors(current, graph, radius);
+            for (let neighbor of neighbors) {
+                if (closedSet.has(neighbor)) continue;
+
+                let tentativeGScore = gScore.get(current) + distance(current, neighbor);
+
+                if (!openSet.includes(neighbor)) {
+                    openSet.push(neighbor);
+                } else if (tentativeGScore >= gScore.get(neighbor)) {
+                    continue;
+                }
+
+                cameFrom.set(neighbor, current);
+                gScore.set(neighbor, tentativeGScore);
+                fScore.set(neighbor, gScore.get(neighbor) + heuristic(neighbor, goalNode));
+            }
+        }
+
+        return []; // No path found
+    }
+
+    function findClosestNode(point, graph) {
+        if (!graph || graph.length === 0) return null;
+
+        // Find all feasible connections
+        let feasibleNodes = graph.filter(node => is_edge_feasible(point, node, p));
+
+        if (feasibleNodes.length === 0) return null;
+
+        return feasibleNodes.reduce((closest, node) => {
+            let distToNode = distance(point, node);
+            let distToClosest = closest ? distance(point, closest) : Infinity;
+            return distToNode < distToClosest ? node : closest;
+        }, null);
+    }
+
+    function getNeighbors(node, graph, radius) {
+        return graph.filter(other => {
+            if (other === node) return false;
+            let dist = distance(node, other);
+            if (dist > radius) return false;
+            return is_edge_feasible(node, other, p);
+        });
+    }
+
+    function distance(a, b) {
+        return frobenius_norm_matrix(sub_matrix_matrix(a, b));
+    }
+
+    function heuristic(a, b) {
+        return distance(a, b);
+    }
+
+    function reconstructPath(cameFrom, current) {
+        let path = [current];
+        while (cameFrom.has(current)) {
+            current = cameFrom.get(current);
+            path.unshift(current);
+        }
+        return path;
+    }
+
+    let actions = {
+        compute_all_steps: function() {
+            states = [];
+            all_steps = [];
+            let r = settings.radius;
+
+            for(let i = 0; i < max_num_steps; i++) {
+                let rx = p.x_min + (p.x_max - p.x_min) * Math.random();
+                let ry = p.y_min + (p.y_max - p.y_min) * Math.random();
+                let pt = [rx, ry];
+                let pt3D = [rx, ry, 6.0];
+                let is_feasible = p.is_feasible(pt);
+
+                if(is_feasible) {
+                    states.push(pt);
+
+                    let new_edges = [];
+
+                    for(let j = 0; j < states.length; j++) {
+                        let d = frobenius_norm_matrix(sub_matrix_matrix(pt, states[j]));
+                        if(d < r) {
+                            let ief = is_edge_feasible(pt, states[j], p);
+                            if(ief) {
+                                new_edges.push( [pt, states[j]] );
+                            }
+                        }
+                    }
+
+                    all_steps.push( [pt3D, new_edges, true] );
+                } else {
+                    all_steps.push( [pt3D, [], false] );
+                }
+            }
+        },
+        increment_step: function() {
+            settings.step+=1;
+            if(settings.step >= max_num_steps) {
+                settings.step=0;
+            }
+            refresh_displays(gui);
+        },
+        decrement_step: function() {
+            settings.step-=1;
+            if(settings.step < 0) {
+                settings.step=max_num_steps;
+            }
+            refresh_displays(gui);
+        },
+        toggle_play: function() {
+            settings.is_playing = !settings.is_playing;
+        },
+        stop: function() {
+            settings.is_playing = false;
+        }
+    }
+
+    let settings = {
+        radius: 0.5,
+        step: 0,
+        show_radius_sphere: false,
+        is_playing: false,
+        show_astar_path: true
+    }
+    let gui = get_default_lil_gui();
+    gui.add(settings, 'radius', 0.5, 2.0).name('neighborhood radius').onFinishChange(actions.compute_all_steps);
+    gui.add(settings, 'show_radius_sphere');
+    gui.add(settings, 'show_astar_path').name('show A* path');
+    gui.add(settings, 'step', 0, max_num_steps, 1).onChange(actions.stop);
+    gui.add(actions, 'increment_step').onChange(actions.stop);
+    gui.add(actions, 'decrement_step').onChange(actions.stop);
+    gui.add(actions, 'toggle_play').name('play/stop');
+    gui.add(actions, 'compute_all_steps').name('recompute');
+
+    let tge = new TransformGizmoEngine(engine);
+    tge.add_gizmo_SO2_matrix_and_position(engine, undefined, [-3.0, 0.0], 0.3);
+    tge.add_gizmo_SO2_matrix_and_position(engine, undefined, [3.0, 0.0], 0.3);
+
+    let states = [];
+    let all_steps = [];
+
+    actions.compute_all_steps();
+
+    engine.animation_loop(() => {
+        p.draw(engine);
+
+        let start_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1]); // just two numbers for x,y, coords, i.e. [1, 1]
+        let goal_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(1)[1]); // just two numbers for x,y, coords, i.e. [1, 1]
+
+        engine.draw_debug_sphere(start_point, 0.06, 0xFFA500);
+        engine.draw_debug_sphere(goal_point, 0.06, 0xFFA500);
+
+        // Build current graph based on current step
+        let currentStates = [];
+        for(let i = 0; i < settings.step; i++) {
+            let curr_step = all_steps[i];
+            if(curr_step[2]) { // if feasible
+                currentStates.push([curr_step[0][0], curr_step[0][1]]); // convert 3D to 2D
+            }
+        }
+
+        // Run A* pathfinding
+        if (settings.show_astar_path && currentStates.length > 0) {
+            let astarPath = astar(start_point, goal_point, currentStates, settings.radius);
+
+            // Draw A* path in magenta
+            if (astarPath.length > 0) {
+                // Connect start point to first node in path
+                if (astarPath.length >= 1) {
+                    let startPoint3D = [start_point[0], start_point[1], 6.1];
+                    let firstNode3D = [astarPath[0][0], astarPath[0][1], 6.1];
+                    engine.draw_debug_line(startPoint3D, firstNode3D, false, 0.07, 0xFF00FF); // Magenta color
+                }
+
+                // Draw path between nodes
+                for (let i = 0; i < astarPath.length - 1; i++) {
+                    let from = [astarPath[i][0], astarPath[i][1], 6.1]; // slightly above other elements
+                    let to = [astarPath[i + 1][0], astarPath[i + 1][1], 6.1];
+                    engine.draw_debug_line(from, to, false, 0.07, 0xFF00FF); // Magenta color
+                }
+
+                // Connect last node in path to goal point
+                if (astarPath.length >= 1) {
+                    let lastNode3D = [astarPath[astarPath.length - 1][0], astarPath[astarPath.length - 1][1], 6.1];
+                    let goalPoint3D = [goal_point[0], goal_point[1], 6.1];
+                    engine.draw_debug_line(lastNode3D, goalPoint3D, false, 0.07, 0xFF00FF); // Magenta color
+                }
+            }
+        }
+
+        for(let i = 0; i < settings.step; i++) {
+            let curr_step = all_steps[i];
+            if(!curr_step[2]) {
+                engine.draw_debug_sphere(curr_step[0], 0.05, 0xff3333, 1.0);
+            } else {
+                if(settings.step-1 === i) {
+                    engine.draw_debug_sphere(curr_step[0], 0.06, 0xeeff00, 1.0);
+                    if(settings.show_radius_sphere) {
+                        engine.draw_debug_sphere(curr_step[0], settings.radius, 0x005555, 0.2);
+                    }
+                } else {
+                    engine.draw_debug_sphere(curr_step[0], 0.05, 0x0066ff, 1.0);
+                }
+                for(let j = 0; j < curr_step[1].length; j++) {
+                    let edge = curr_step[1][j];
+                    engine.draw_debug_line(edge[0], edge[1], false, undefined, 0x111111);
+                }
+            }
+        }
+
+        if(settings.is_playing) {
+            if(engine.frame_idx % 10 === 0) {
+                settings.step += 1;
+                if(settings.step >= max_num_steps) {
+                    settings.step = 0;
+                }
+            }
+        }
+
+        engine.draw_debug_sphere([-8.0, 4.0], settings.radius, 0x005555, 0.1);
+        refresh_displays(gui);
+    });
+
+</script>
+</body>
+</html>

@@ -48,7 +48,7 @@
 
             let pos1 = tge.get_gizmo_pose_as_SO3_matrix_and_position(0)[1];
             let pos2 = tge.get_gizmo_pose_as_SO3_matrix_and_position(1)[1];
-            engine.draw_debug_line(pos1, pos2, false, 0.02, 0x2255ff);
+            engine.draw_debug_line(pos1, pos2, false, 0.03, 0x2255ff);
 
             let dis = frobenius_norm_matrix(sub_matrix_matrix(pos1, pos2));
             let num_steps = Math.floor(dis / settings.step_size);
@@ -63,7 +63,7 @@
                 let is_feasible = p.is_feasible(interp2D);
                 let cc;
                 if(is_feasible) { cc = 0x00ff55 } else { cc = 0xff5500; total_is_feasible=false; }
-                engine.draw_debug_sphere(interp, 0.02, cc);
+                engine.draw_debug_sphere(interp, 0.05, cc);
 
                 if(!p.is_feasible(start2D)) { total_is_feasible = false; }
                 if(!p.is_feasible(end2D)) { total_is_feasible = false; }

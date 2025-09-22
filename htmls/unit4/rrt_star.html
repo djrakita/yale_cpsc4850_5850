@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale CPSC 4850/5850 - RRT*</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import {ThreeEngine} from '../js/utils/utils_three.js'
+    import {CircleWorldFeasibilityChecker} from "../js/utils/utils_continuous_planning.js";
+    import {get_default_lil_gui} from "../js/utils/utils_three.js";
+    import {refresh_displays} from "../js/utils/utils_three.js";
+    import {frobenius_norm_matrix, sub_matrix_matrix} from "../js/utils/utils_math.js";
+    import {is_edge_feasible} from "../js/utils/utils_continuous_planning.js";
+    import {TransformGizmoEngine} from "../js/utils/utils_transform_gizmo.js";
+    import {unroll_matrix_to_list} from "../js/utils/utils_math.js";
+
+    let engine = ThreeEngine.new_default_2d();
+    let p = new CircleWorldFeasibilityChecker();
+    let max_num_steps = 2000;
+
+    // RRT* Node class
+    class RRTStarNode {
+        constructor(position, parent = null, cost_to_come = 0) {
+            this.position = position; // [x, y]
+            this.parent = parent;
+            this.children = [];
+            this.cost_to_come = cost_to_come;
+
+            if (parent) {
+                parent.children.push(this);
+            }
+        }
+
+        updateCostToComesDownstream() {
+            for (let child of this.children) {
+                let edgeCost = frobenius_norm_matrix(sub_matrix_matrix(child.position, this.position));
+                child.cost_to_come = this.cost_to_come + edgeCost;
+                child.updateCostToComesDownstream();
+            }
+        }
+
+        removeChild(childNode) {
+            let index = this.children.indexOf(childNode);
+            if (index > -1) {
+                this.children.splice(index, 1);
+            }
+        }
+    }
+
+    // RRT* Algorithm Implementation
+    class RRTStar {
+        constructor(start, goal, stepSize = 0.3, neighborhoodRadius = 0.8, goalBias = 0.1, goalRadius = 0.2) {
+            this.start = start;
+            this.goal = goal;
+            this.stepSize = stepSize;
+            this.neighborhoodRadius = neighborhoodRadius;
+            this.goalBias = goalBias;
+            this.goalRadius = goalRadius;
+
+            this.vertices = [new RRTStarNode(start, null, 0)];
+            this.edges = [];
+
+            this.bestPath = null;
+            this.bestCost = null;
+            this.goalVertex = null;
+        }
+
+        distance(a, b) {
+            return frobenius_norm_matrix(sub_matrix_matrix(a, b));
+        }
+
+        getClosestVertexToPoint(point) {
+            let minDist = Infinity;
+            let closest = null;
+
+            for (let vertex of this.vertices) {
+                let dist = this.distance(vertex.position, point);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = vertex;
+                }
+            }
+            return closest;
+        }
+
+        getVerticesWithinDistance(point, radius) {
+            let neighbors = [];
+            for (let vertex of this.vertices) {
+                if (this.distance(vertex.position, point) <= radius) {
+                    neighbors.push(vertex);
+                }
+            }
+            return neighbors;
+        }
+
+        samplePoint() {
+            let u = Math.random();
+            if (u < this.goalBias) {
+                return this.goal.slice();
+            } else {
+                let rx = p.x_min + (p.x_max - p.x_min) * Math.random();
+                let ry = p.y_min + (p.y_max - p.y_min) * Math.random();
+                return [rx, ry];
+            }
+        }
+
+        steer(from, to, stepSize) {
+            let direction = sub_matrix_matrix(to, from);
+            let d = frobenius_norm_matrix(direction);
+
+            if (d === 0) {
+                return this.goal.slice();
+            }
+
+            if (d <= stepSize) {
+                return to;
+            }
+
+            let normalizedDirection = [direction[0] / d, direction[1] / d];
+            return [from[0] + normalizedDirection[0] * stepSize, from[1] + normalizedDirection[1] * stepSize];
+        }
+
+        unrollPathBackToStart(vertex) {
+            let path = [];
+            let current = vertex;
+            while (current) {
+                path.unshift(current.position);
+                current = current.parent;
+            }
+            return path;
+        }
+
+        extend() {
+            // Sample point
+            let sample = this.samplePoint();
+
+            // Find nearest neighbor
+            let nearestNeighbor = this.getClosestVertexToPoint(sample);
+
+            // Steer towards sample
+            let candidateState = this.steer(nearestNeighbor.position, sample, this.stepSize);
+
+            // Check if candidate state is feasible
+            if (!p.is_feasible(candidateState)) {
+                return {
+                    success: false,
+                    sample: sample,
+                    nearest: nearestNeighbor.position,
+                    newNode: null
+                };
+            }
+
+            // Get neighborhood
+            let neighborhood = this.getVerticesWithinDistance(candidateState, this.neighborhoodRadius);
+
+            // Find minimum cost to come vertex
+            let minCostToComeVertex = null;
+            let minCostToCome = Infinity;
+
+            for (let neighborhoodVertex of neighborhood) {
+                let edgeCost = this.distance(neighborhoodVertex.position, candidateState);
+                let totalCost = neighborhoodVertex.cost_to_come + edgeCost;
+
+                if (totalCost < minCostToCome &&
+                    is_edge_feasible(neighborhoodVertex.position, candidateState, p)) {
+                    minCostToComeVertex = neighborhoodVertex;
+                    minCostToCome = totalCost;
+                }
+            }
+
+            if (minCostToComeVertex === null) {
+                return {
+                    success: false,
+                    sample: sample,
+                    nearest: nearestNeighbor.position,
+                    newNode: null
+                };
+            }
+
+            // Add new vertex
+            let newVertex = new RRTStarNode(candidateState, minCostToComeVertex, minCostToCome);
+            this.vertices.push(newVertex);
+            this.edges.push([minCostToComeVertex, newVertex]);
+
+            // Rewiring - check if other nodes in neighborhood can be reached on shorter path
+            for (let neighborhoodVertex of neighborhood) {
+                if (neighborhoodVertex === minCostToComeVertex) continue;
+
+                let candidateCostToCome = newVertex.cost_to_come +
+                    this.distance(newVertex.position, neighborhoodVertex.position);
+
+                if (candidateCostToCome < neighborhoodVertex.cost_to_come &&
+                    is_edge_feasible(newVertex.position, neighborhoodVertex.position, p)) {
+
+                    // Remove old edge
+                    if (neighborhoodVertex.parent) {
+                        neighborhoodVertex.parent.removeChild(neighborhoodVertex);
+                        this.edges = this.edges.filter(edge => edge[1] !== neighborhoodVertex);
+                    }
+
+                    // Add new edge
+                    neighborhoodVertex.parent = newVertex;
+                    newVertex.children.push(neighborhoodVertex);
+                    neighborhoodVertex.cost_to_come = candidateCostToCome;
+                    this.edges.push([newVertex, neighborhoodVertex]);
+
+                    // Update downstream costs
+                    neighborhoodVertex.updateCostToComesDownstream();
+                }
+            }
+
+            // Check if best path has been improved
+            if (this.bestCost === null) {
+                if (this.distance(candidateState, this.goal) < this.goalRadius) {
+                    this.goalVertex = new RRTStarNode(this.goal, newVertex,
+                        newVertex.cost_to_come + this.distance(newVertex.position, this.goal));
+                    this.vertices.push(this.goalVertex);
+                    this.edges.push([newVertex, this.goalVertex]);
+
+                    this.bestCost = this.goalVertex.cost_to_come;
+                    this.bestPath = this.unrollPathBackToStart(this.goalVertex);
+                }
+            } else if (this.goalVertex) {
+                let cost = this.goalVertex.cost_to_come;
+                if (cost < this.bestCost) {
+                    this.bestCost = cost;
+                    this.bestPath = this.unrollPathBackToStart(this.goalVertex);
+                }
+            }
+
+            return {
+                success: true,
+                sample: sample,
+                nearest: nearestNeighbor.position,
+                newNode: candidateState,
+                newVertex: newVertex
+            };
+        }
+    }
+
+    let rrtStar = null;
+    let all_steps = [];
+    let lastStartPos = null;
+    let lastGoalPos = null;
+
+    let actions = {
+        compute_all_steps: function() {
+            let start_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1]);
+            let goal_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(1)[1]);
+
+            rrtStar = new RRTStar(start_point, goal_point, settings.step_size,
+                settings.neighborhood_radius, settings.goal_bias, settings.goal_radius);
+            all_steps = [];
+
+            for (let i = 0; i < max_num_steps; i++) {
+                let result = rrtStar.extend();
+                // Store a snapshot of the tree state at this step
+                result.treeSnapshot = {
+                    vertices: rrtStar.vertices.map(v => ({
+                        position: v.position.slice(),
+                        cost_to_come: v.cost_to_come,
+                        parent_position: v.parent ? v.parent.position.slice() : null
+                    })),
+                    bestPath: rrtStar.bestPath ? rrtStar.bestPath.map(p => p.slice()) : null,
+                    bestCost: rrtStar.bestCost
+                };
+                all_steps.push(result);
+            }
+
+            lastStartPos = start_point.slice();
+            lastGoalPos = goal_point.slice();
+        },
+        increment_step: function() {
+            settings.step += 1;
+            if (settings.step >= all_steps.length) {
+                settings.step = all_steps.length - 1;
+            }
+            refresh_displays(gui);
+        },
+        decrement_step: function() {
+            settings.step -= 1;
+            if (settings.step < 0) {
+                settings.step = 0;
+            }
+            refresh_displays(gui);
+        },
+        toggle_play: function() {
+            settings.is_playing = !settings.is_playing;
+        },
+        stop: function() {
+            settings.is_playing = false;
+        }
+    }
+
+    let settings = {
+        step_size: 0.3,
+        neighborhood_radius: 0.8,
+        goal_bias: 0.1,
+        goal_radius: 0.2,
+        step: 0,
+        is_playing: false,
+        show_tree: true,
+        show_path: true,
+        best_cost: 'No solution'
+    }
+
+    let gui = get_default_lil_gui();
+    gui.add(settings, 'step_size', 0.1, 1.0).name('step size').onFinishChange(actions.compute_all_steps);
+    gui.add(settings, 'neighborhood_radius', 0.2, 2.0).name('neighborhood radius').onFinishChange(actions.compute_all_steps);
+    gui.add(settings, 'goal_bias', 0.0, 1.0).name('goal bias').onFinishChange(actions.compute_all_steps);
+    gui.add(settings, 'goal_radius', 0.1, 0.5).name('goal radius').onFinishChange(actions.compute_all_steps);
+    gui.add(settings, 'show_tree').name('show RRT* tree');
+    gui.add(settings, 'show_path').name('show best path');
+    gui.add(settings, 'step', 0, max_num_steps, 1).onChange(actions.stop);
+    gui.add(settings, 'best_cost').name('best path cost').listen();
+    gui.add(actions, 'increment_step').onChange(actions.stop);
+    gui.add(actions, 'decrement_step').onChange(actions.stop);
+    gui.add(actions, 'toggle_play').name('play/stop');
+    gui.add(actions, 'compute_all_steps').name('recompute');
+
+    let tge = new TransformGizmoEngine(engine);
+    tge.add_gizmo_SO2_matrix_and_position(engine, undefined, [-3.0, 0.0], 0.3);
+    tge.add_gizmo_SO2_matrix_and_position(engine, undefined, [3.0, 0.0], 0.3);
+
+    actions.compute_all_steps();
+
+    engine.animation_loop(() => {
+        p.draw(engine);
+
+        let start_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1]);
+        let goal_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(1)[1]);
+
+        // Check if start or goal has moved
+        let startMoved = !lastStartPos || frobenius_norm_matrix(sub_matrix_matrix(start_point, lastStartPos)) > 0.01;
+        let goalMoved = !lastGoalPos || frobenius_norm_matrix(sub_matrix_matrix(goal_point, lastGoalPos)) > 0.01;
+
+        if (startMoved || goalMoved) {
+            actions.compute_all_steps();
+        }
+
+        if (!rrtStar || all_steps.length === 0) return;
+
+        let currentStepIndex = Math.min(settings.step, all_steps.length - 1);
+        let currentSnapshot = all_steps[currentStepIndex].treeSnapshot;
+
+        // Update best cost display from current step
+        if (currentSnapshot && currentSnapshot.bestCost !== null) {
+            settings.best_cost = currentSnapshot.bestCost.toFixed(3);
+        } else {
+            settings.best_cost = 'No solution';
+        }
+
+        // Draw start and goal points
+        engine.draw_debug_sphere([start_point[0], start_point[1], 6.0], 0.08, 0x00FF00); // Green start
+        engine.draw_debug_sphere([goal_point[0], goal_point[1], 6.0], 0.08, 0xFF0000); // Red goal
+
+        // Draw goal radius
+        engine.draw_debug_sphere([goal_point[0], goal_point[1], 5.8], settings.goal_radius, 0xFF0000, false, 0.1); // Goal radius
+
+        // Draw RRT* tree from snapshot
+        if (settings.show_tree && currentSnapshot) {
+            // Draw all vertices up to current step
+            for (let vertex of currentSnapshot.vertices) {
+                engine.draw_debug_sphere([vertex.position[0], vertex.position[1], 6.0], 0.04, 0x0066FF);
+            }
+
+            // Draw all edges from snapshot
+            for (let vertex of currentSnapshot.vertices) {
+                if (vertex.parent_position) {
+                    engine.draw_debug_line(
+                        [vertex.parent_position[0], vertex.parent_position[1], 6.0],
+                        [vertex.position[0], vertex.position[1], 6.0],
+                        false, 0.02, 0x666666
+                    );
+                }
+            }
+
+            // Highlight current step's new node if it was successful
+            let currentStep = all_steps[settings.step];
+            if (currentStep && currentStep.success && currentStep.newNode) {
+                engine.draw_debug_sphere([currentStep.newNode[0], currentStep.newNode[1], 6.0], 0.06, 0xFFFF00);
+            }
+
+            // Draw sample point and connection for current step
+            if (currentStep && currentStep.sample) {
+                engine.draw_debug_sphere([currentStep.sample[0], currentStep.sample[1], 6.1], 0.03, 0x9966FF);
+
+                if (currentStep.nearest) {
+                    engine.draw_debug_line(
+                        [currentStep.nearest[0], currentStep.nearest[1], 6.05],
+                        [currentStep.sample[0], currentStep.sample[1], 6.05],
+                        false, 0.01, 0x222222
+                    );
+                }
+            }
+        }
+
+        // Draw best path from snapshot
+        if (settings.show_path && currentSnapshot && currentSnapshot.bestPath && currentSnapshot.bestPath.length > 0) {
+            for (let i = 0; i < currentSnapshot.bestPath.length - 1; i++) {
+                let from = [currentSnapshot.bestPath[i][0], currentSnapshot.bestPath[i][1], 6.2];
+                let to = [currentSnapshot.bestPath[i + 1][0], currentSnapshot.bestPath[i + 1][1], 6.2];
+                engine.draw_debug_line(from, to, false, 0.08, 0xFF00FF); // Magenta path
+            }
+        }
+
+        // Auto-play functionality
+        if (settings.is_playing) {
+            if (engine.frame_idx % 10 === 0) {
+                settings.step += 1;
+                if (settings.step >= all_steps.length) {
+                    settings.step = 0;
+                    actions.compute_all_steps(); // Restart
+                }
+            }
+        }
+
+        refresh_displays(gui);
+    });
+
+</script>
+</body>
+</html>

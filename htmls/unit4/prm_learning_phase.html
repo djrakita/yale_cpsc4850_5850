@@ -118,14 +118,20 @@
                     if(settings.step-1 === i) {
                         engine.draw_debug_sphere(curr_step[0], 0.06, 0xeeff00, 1.0);
                         if(settings.show_radius_sphere) {
-                            engine.draw_debug_sphere(curr_step[0], settings.radius, 0x005555, 0.2);
+                            let cc = curr_step[0].slice();
+                            cc[2] = -10.0;
+                            engine.draw_debug_sphere(cc, settings.radius, 0x005555, 0.2);
                         }
                     } else {
                         engine.draw_debug_sphere(curr_step[0], 0.05, 0x0066ff, 1.0);
                     }
                     for(let j = 0; j < curr_step[1].length; j++) {
+                        let edge_color = 0x111111;
+                        if(settings.step-1 === i && settings.show_radius_sphere) {
+                            edge_color = 0xeeff00;
+                        }
                         let edge = curr_step[1][j];
-                        engine.draw_debug_line(edge[0], edge[1], false, undefined, 0x111111);
+                        engine.draw_debug_line(edge[0], edge[1], false, undefined, edge_color);
                     }
                 }
             }
@@ -139,7 +145,7 @@
                 }
             }
 
-            engine.draw_debug_sphere([-8.0, 4.0], settings.radius, 0x005555, 0.1);
+            // engine.draw_debug_sphere([-8.0, 4.0], settings.radius, 0x005555, 0.1);
             refresh_displays(gui);
         });
 

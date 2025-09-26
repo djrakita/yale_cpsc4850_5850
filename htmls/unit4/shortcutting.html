@@ -30,7 +30,7 @@
     let engine = ThreeEngine.new_default_2d();
     let p = new CircleWorldFeasibilityChecker();
     let max_num_steps = 2000;
-    let max_shortcut_iterations = 500;
+    let max_shortcut_iterations = 2000;
 
     // RRT Node class
     class RRTNode {
@@ -310,7 +310,7 @@
         goal_bias: 0.1,
         step: 0,
         is_playing: false,
-        show_original_path: false,
+        show_original_path: true,
         original_path_length: 0.0,
         current_path_length: 0.0
     }

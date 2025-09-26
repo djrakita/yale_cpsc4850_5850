@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yale CPSC 4850/5850 - RRT Shortcutting</title>
+    <script src="../../js/setup/setup_mathjax.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import {ThreeEngine} from '../js/utils/utils_three.js'
+    import {CircleWorldFeasibilityChecker} from "../js/utils/utils_continuous_planning.js";
+    import {get_default_lil_gui} from "../js/utils/utils_three.js";
+    import {refresh_displays} from "../js/utils/utils_three.js";
+    import {frobenius_norm_matrix, sub_matrix_matrix} from "../js/utils/utils_math.js";
+    import {is_edge_feasible} from "../js/utils/utils_continuous_planning.js";
+    import {TransformGizmoEngine} from "../js/utils/utils_transform_gizmo.js";
+    import {unroll_matrix_to_list} from "../js/utils/utils_math.js";
+
+    let engine = ThreeEngine.new_default_2d();
+    let p = new CircleWorldFeasibilityChecker();
+    let max_num_steps = 500;
+    let max_shortcut_iterations = 500;
+
+    // RRT Node class
+    class RRTNode {
+        constructor(position, parent = null) {
+            this.position = position; // [x, y]
+            this.parent = parent;
+            this.children = [];
+            if (parent) {
+                parent.children.push(this);
+            }
+        }
+    }
+
+    // RRT Algorithm Implementation (for initial path generation)
+    class RRT {
+        constructor(start, goal, stepSize = 0.3, goalBias = 0.1) {
+            this.start = start;
+            this.goal = goal;
+            this.stepSize = stepSize;
+            this.goalBias = goalBias;
+            this.nodes = [new RRTNode(start)];
+            this.goalReached = false;
+            this.goalNode = null;
+            this.path = [];
+        }
+
+        findNearestNode(point) {
+            let minDist = Infinity;
+            let nearest = null;
+
+            for (let node of this.nodes) {
+                let dist = this.distance(node.position, point);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = node;
+                }
+            }
+            return nearest;
+        }
+
+        distance(a, b) {
+            return frobenius_norm_matrix(sub_matrix_matrix(a, b));
+        }
+
+        steer(from, to, stepSize) {
+            let direction = sub_matrix_matrix(to, from);
+            let dist = frobenius_norm_matrix(direction);
+
+            if (dist <= stepSize) {
+                return to;
+            }
+
+            let normalizedDir = [direction[0] / dist, direction[1] / dist];
+            return [from[0] + normalizedDir[0] * stepSize, from[1] + normalizedDir[1] * stepSize];
+        }
+
+        samplePoint() {
+            if (Math.random() < this.goalBias) {
+                return this.goal.slice();
+            }
+
+            let rx = p.x_min + (p.x_max - p.x_min) * Math.random();
+            let ry = p.y_min + (p.y_max - p.y_min) * Math.random();
+            return [rx, ry];
+        }
+
+        extend() {
+            let randomPoint = this.samplePoint();
+            let nearestNode = this.findNearestNode(randomPoint);
+            let newPoint = this.steer(nearestNode.position, randomPoint, this.stepSize);
+
+            if (p.is_feasible(newPoint) && is_edge_feasible(nearestNode.position, newPoint, p)) {
+                let newNode = new RRTNode(newPoint, nearestNode);
+                this.nodes.push(newNode);
+
+                if (this.distance(newPoint, this.goal) <= this.stepSize &&
+                    is_edge_feasible(newPoint, this.goal, p)) {
+                    this.goalNode = newNode;
+                    this.goalReached = true;
+                    this.computePath();
+                }
+
+                return true;
+            }
+            return false;
+        }
+
+        computePath() {
+            if (!this.goalReached) return;
+
+            this.path = [];
+            let current = this.goalNode;
+
+            while (current) {
+                this.path.unshift(current.position);
+                current = current.parent;
+            }
+
+            if (this.path.length > 0) {
+                this.path.push(this.goal);
+            }
+        }
+
+        generatePath() {
+            for (let i = 0; i < max_num_steps; i++) {
+                this.extend();
+                if (this.goalReached) {
+                    break;
+                }
+            }
+            return this.path;
+        }
+    }
+
+    // Path Shortcutting class
+    class PathShortcutter {
+        constructor(originalPath) {
+            this.originalPath = originalPath.map(p => p.slice()); // Deep copy
+            this.currentPath = originalPath.map(p => p.slice()); // Deep copy
+            this.shortcutSteps = [];
+            this.generateShortcutSteps();
+        }
+
+        generateShortcutSteps() {
+            this.shortcutSteps = [];
+            let workingPath = this.originalPath.map(p => p.slice());
+
+            for (let iter = 0; iter < max_shortcut_iterations; iter++) {
+                if (workingPath.length < 3) break; // Need at least 3 points to shortcut
+
+                // Random sampling of two indices
+                let i = Math.floor(Math.random() * workingPath.length);
+                let j = Math.floor(Math.random() * workingPath.length);
+
+                // Ensure j > i and there's at least one point between them
+                if (i >= j) {
+                    [i, j] = [j, i];
+                }
+                if (j - i < 2) {
+                    // Try to find a valid pair
+                    if (i > 0) {
+                        j = i;
+                        i = i - 1;
+                    } else if (j < workingPath.length - 1) {
+                        i = j;
+                        j = j + 1;
+                    } else {
+                        // Can't find a valid pair, skip this iteration
+                        this.shortcutSteps.push({
+                            i: i,
+                            j: j,
+                            x_i: workingPath[i],
+                            x_j: workingPath[j],
+                            feasible: false,
+                            pathBefore: workingPath.map(p => p.slice()),
+                            pathAfter: workingPath.map(p => p.slice())
+                        });
+                        continue;
+                    }
+                }
+
+                let x_i = workingPath[i];
+                let x_j = workingPath[j];
+                let feasible = is_edge_feasible(x_i, x_j, p);
+
+                let pathBefore = workingPath.map(p => p.slice());
+                let pathAfter;
+
+                if (feasible && j - i > 1) {
+                    // Remove points between i and j, keep i and j
+                    pathAfter = workingPath.slice(0, i + 1).concat(workingPath.slice(j));
+                    workingPath = pathAfter;
+                } else {
+                    pathAfter = workingPath.map(p => p.slice());
+                }
+
+                this.shortcutSteps.push({
+                    i: i,
+                    j: j,
+                    x_i: x_i.slice(),
+                    x_j: x_j.slice(),
+                    feasible: feasible,
+                    pathBefore: pathBefore,
+                    pathAfter: pathAfter
+                });
+            }
+        }
+
+        getPathAtStep(step) {
+            if (step < 0) return this.originalPath;
+            if (step >= this.shortcutSteps.length) {
+                return this.shortcutSteps[this.shortcutSteps.length - 1].pathAfter;
+            }
+            return this.shortcutSteps[step].pathAfter;
+        }
+
+        getStepInfo(step) {
+            if (step < 0 || step >= this.shortcutSteps.length) return null;
+            return this.shortcutSteps[step];
+        }
+
+        getOriginalPathLength() {
+            return this.calculatePathLength(this.originalPath);
+        }
+
+        getCurrentPathLength(step) {
+            let path = this.getPathAtStep(step);
+            return this.calculatePathLength(path);
+        }
+
+        calculatePathLength(path) {
+            if (path.length < 2) return 0;
+            let length = 0;
+            for (let i = 0; i < path.length - 1; i++) {
+                length += frobenius_norm_matrix(sub_matrix_matrix(path[i + 1], path[i]));
+            }
+            return length;
+        }
+    }
+
+    let rrt = null;
+    let shortcutter = null;
+    let lastStartPos = null;
+    let lastGoalPos = null;
+
+    let actions = {
+        compute_new_path: function() {
+            let start_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1]);
+            let goal_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(1)[1]);
+
+            rrt = new RRT(start_point, goal_point, settings.step_size, settings.goal_bias);
+            let path = rrt.generatePath();
+
+            if (path && path.length > 0) {
+                shortcutter = new PathShortcutter(path);
+            }
+
+            lastStartPos = start_point.slice();
+            lastGoalPos = goal_point.slice();
+        },
+
+        recompute_shortcutting: function() {
+            if (rrt && rrt.path && rrt.path.length > 0) {
+                shortcutter = new PathShortcutter(rrt.path);
+            }
+        },
+
+        increment_step: function() {
+            if (shortcutter) {
+                settings.step += 1;
+                if (settings.step >= max_shortcut_iterations) {
+                    settings.step = max_shortcut_iterations - 1;
+                }
+            }
+            refresh_displays(gui);
+        },
+
+        decrement_step: function() {
+            settings.step -= 1;
+            if (settings.step < 0) {
+                settings.step = 0;
+            }
+            refresh_displays(gui);
+        },
+
+        toggle_play: function() {
+            settings.is_playing = !settings.is_playing;
+        },
+
+        stop: function() {
+            settings.is_playing = false;
+        }
+    }
+
+    let settings = {
+        step_size: 0.3,
+        goal_bias: 0.1,
+        step: 0,
+        is_playing: false,
+        show_original_path: false,
+        original_path_length: 0.0,
+        current_path_length: 0.0
+    }
+
+    let gui = get_default_lil_gui();
+    gui.add(settings, 'step_size', 0.1, 1.0).name('step size').onFinishChange(actions.compute_new_path);
+    gui.add(settings, 'goal_bias', 0.0, 1.0).name('goal bias').onFinishChange(actions.compute_new_path);
+    gui.add(settings, 'show_original_path').name('show original path');
+    gui.add(settings, 'original_path_length').name('original path length').listen().disable();
+    gui.add(settings, 'current_path_length').name('current path length').listen().disable();
+    gui.add(settings, 'step', 0, max_shortcut_iterations - 1, 1).onChange(actions.stop);
+    gui.add(actions, 'increment_step').onChange(actions.stop);
+    gui.add(actions, 'decrement_step').onChange(actions.stop);
+    gui.add(actions, 'toggle_play').name('play/stop');
+    gui.add(actions, 'compute_new_path').name('recompute new path');
+    gui.add(actions, 'recompute_shortcutting').name('recompute shortcutting');
+
+    let tge = new TransformGizmoEngine(engine);
+    tge.add_gizmo_SO2_matrix_and_position(engine, undefined, [-3.0, 0.0], 0.3);
+    tge.add_gizmo_SO2_matrix_and_position(engine, undefined, [3.0, 0.0], 0.3);
+
+    actions.compute_new_path();
+
+    engine.animation_loop(() => {
+        p.draw(engine);
+
+        let start_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(0)[1]);
+        let goal_point = unroll_matrix_to_list(tge.get_gizmo_pose_as_SO2_matrix_and_position(1)[1]);
+
+        // Check if start or goal has moved
+        let startMoved = !lastStartPos || frobenius_norm_matrix(sub_matrix_matrix(start_point, lastStartPos)) > 0.01;
+        let goalMoved = !lastGoalPos || frobenius_norm_matrix(sub_matrix_matrix(goal_point, lastGoalPos)) > 0.01;
+
+        if (startMoved || goalMoved) {
+            actions.compute_new_path();
+        }
+
+        // Draw start and goal points
+        engine.draw_debug_sphere([start_point[0], start_point[1], 6.0], 0.08, 0x00FF00); // Green start
+        engine.draw_debug_sphere([goal_point[0], goal_point[1], 6.0], 0.08, 0xFF0000); // Red goal
+
+        if (!shortcutter) return;
+
+        // Update path lengths for display
+        settings.original_path_length = shortcutter.getOriginalPathLength();
+        settings.current_path_length = shortcutter.getCurrentPathLength(settings.step);
+
+        // Draw original path if requested (thin gray)
+        if (settings.show_original_path) {
+            let originalPath = shortcutter.originalPath;
+            for (let i = 0; i < originalPath.length - 1; i++) {
+                let from = [originalPath[i][0], originalPath[i][1], 5.8];
+                let to = [originalPath[i + 1][0], originalPath[i + 1][1], 5.8];
+                engine.draw_debug_line(from, to, false, 0.02, 0x888888); // Thin gray
+            }
+        }
+
+        // Draw current shortcut path (magenta)
+        let currentPath = shortcutter.getPathAtStep(settings.step);
+        for (let i = 0; i < currentPath.length - 1; i++) {
+            let from = [currentPath[i][0], currentPath[i][1], 6.2];
+            let to = [currentPath[i + 1][0], currentPath[i + 1][1], 6.2];
+            engine.draw_debug_line(from, to, false, 0.08, 0xFF00FF); // Magenta path
+        }
+
+        // Draw current shortcut attempt
+        let stepInfo = shortcutter.getStepInfo(settings.step);
+        if (stepInfo) {
+            // Draw the sampled points
+            engine.draw_debug_sphere([stepInfo.x_i[0], stepInfo.x_i[1], 6.3], 0.06, 0xFFFF00); // Yellow
+            engine.draw_debug_sphere([stepInfo.x_j[0], stepInfo.x_j[1], 6.3], 0.06, 0xFFFF00); // Yellow
+
+            // Draw the test edge
+            let edgeColor = stepInfo.feasible ? 0x00FF88 : 0xFF4444; // Light green if feasible, light red if not
+            engine.draw_debug_line(
+                [stepInfo.x_i[0], stepInfo.x_i[1], 6.25],
+                [stepInfo.x_j[0], stepInfo.x_j[1], 6.25],
+                false, 0.04, edgeColor
+            );
+        }
+
+        // Auto-play functionality
+        if (settings.is_playing) {
+            if (engine.frame_idx % 20 === 0) { // Slower than before to see shortcutting steps
+                settings.step += 1;
+                if (settings.step >= max_shortcut_iterations) {
+                    settings.step = max_shortcut_iterations - 1;
+                    settings.is_playing = false;
+                }
+            }
+        }
+
+        refresh_displays(gui);
+    });
+
+</script>
+</body>
+</html>
